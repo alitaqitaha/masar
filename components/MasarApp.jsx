@@ -1,13 +1,15 @@
 "use client";
 /**
  * مسار (Masar) — نظام إدارة المعاهد
- * جميع الحقوق محفوظة لـ المهندس علي تقي © 2026
+ * جميع الحقوق محفوظة لـ علي تقي © 2026
  * يُمنع نسخ أو إعادة توزيع هذا الكود دون إذن مسبق من المالك.
  */
 import React, { useState, useEffect } from "react";
 import {
   fetchAll,
   addTeacher as dbAddTeacher,
+  updateTeacherName as dbUpdateTeacherName,
+  deleteTeacher as dbDeleteTeacher,
   addGroup as dbAddGroup,
   addStudent as dbAddStudent,
   addAttendanceRecord as dbAddAttendanceRecord,
@@ -39,6 +41,8 @@ import {
   X,
   Users,
   Layers,
+  User,
+  Hash,
   Calculator,
   Languages,
   FlaskConical,
@@ -383,15 +387,41 @@ function GroupPicker({ groups, value, onChange }) {
 }
 
 /* ============================== add teacher ============================== */
-function TeacherDetailScreen({ store, teacher, onBack }) {
+function TeacherDetailScreen({ store, teacher, onBack, onDeleted }) {
   const subj = getSubject(teacher.subjectId);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(teacher.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const saveName = () => {
+    if (!name.trim()) return;
+    store.updateTeacherName(teacher.id, name.trim());
+    setEditing(false);
+  };
+
   return (
-    <ScreenShell title={teacher.name} onBack={onBack}>
-      <div className="flex items-center gap-2 mb-6 text-xs" style={{ color: INK_MUTED }}>
-        <subj.icon size={14} style={{ color: ACCENT }} />
-        {subj.name} · {teacher.groups.length} مجموعة
-      </div>
-      <div className="flex flex-col gap-4">
+    <ScreenShell title={editing ? "تعديل اسم المدرس" : teacher.name} onBack={onBack}>
+      {editing ? (
+        <div className="mb-6 p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+          <Field label="اسم المدرس"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <div className="flex gap-2">
+            <button onClick={() => { setEditing(false); setName(teacher.name); }} className="flex-1 rounded-xl py-2.5 text-sm font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+            <button onClick={saveName} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white" style={{ background: ACCENT }}>حفظ</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2 text-xs" style={{ color: INK_MUTED }}>
+            <subj.icon size={14} style={{ color: ACCENT }} />
+            {subj.name} · {teacher.groups.length} مجموعة
+          </div>
+          <button onClick={() => setEditing(true)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: SURFACE }} aria-label="تعديل الاسم">
+            <Pencil size={13} style={{ color: ACCENT }} />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4 mb-8">
         {teacher.groups.map((g) => {
           const groupStudents = store.students.filter((s) => s.enrollments[teacher.subjectId]?.teacherId === teacher.id && s.enrollments[teacher.subjectId]?.groupId === g.id);
           return (
@@ -418,6 +448,30 @@ function TeacherDetailScreen({ store, teacher, onBack }) {
           );
         })}
       </div>
+
+      {!confirmDelete ? (
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold border"
+          style={{ borderColor: DANGER, color: DANGER, fontFamily: SANS }}
+        >
+          <Trash2 size={15} /> حذف المدرس
+        </button>
+      ) : (
+        <div className="rounded-xl border p-3.5" style={{ borderColor: DANGER, background: "#FBEAE8" }}>
+          <p className="text-xs mb-3" style={{ color: DANGER, fontFamily: SANS }}>حذف المدرس يحذف كل مجموعاته وسجلات درجاته وحضوره المرتبطة. متأكد؟</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-lg py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+            <button
+              onClick={() => { store.deleteTeacher(teacher.id); onDeleted?.(); }}
+              className="flex-1 rounded-lg py-2.5 text-xs font-semibold text-white"
+              style={{ background: DANGER }}
+            >
+              تأكيد الحذف
+            </button>
+          </div>
+        </div>
+      )}
     </ScreenShell>
   );
 }
@@ -439,7 +493,7 @@ function AddTeacherScreen({ store, onBack }) {
 
   const openTeacher = store.teachers.find((t) => t.id === openTeacherId);
   if (openTeacher) {
-    return <TeacherDetailScreen store={store} teacher={openTeacher} onBack={() => setOpenTeacherId(null)} />;
+    return <TeacherDetailScreen store={store} teacher={openTeacher} onBack={() => setOpenTeacherId(null)} onDeleted={() => setOpenTeacherId(null)} />;
   }
 
   return (
@@ -506,6 +560,17 @@ function AddGroupScreen({ store, onBack }) {
 /* ============================== add student ============================== */
 /* ============================== student ID card ============================== */
 
+function IDField({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2.5" dir="rtl">
+      <Icon size={15} style={{ color: ACCENT, flexShrink: 0 }} />
+      <p style={{ fontSize: 13, color: INK }}>
+        <span style={{ fontWeight: 700 }}>{label}:</span> {value}
+      </p>
+    </div>
+  );
+}
+
 function IDCardPrintScreen({ student, onBack }) {
   return (
     <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
@@ -521,61 +586,59 @@ function IDCardPrintScreen({ student, onBack }) {
 
       <div
         id="id-card-print"
-        className="relative mx-auto rounded-3xl overflow-hidden flex flex-col"
-        style={{ width: 280, background: "#fff", boxShadow: "0 16px 32px rgba(22,33,29,0.2)", border: `1px solid ${BORDER}` }}
+        className="relative mx-auto rounded-3xl overflow-hidden"
+        style={{ width: 360, background: "#fff", boxShadow: "0 16px 32px rgba(22,33,29,0.2)" }}
       >
-        {/* lanyard punch */}
-        <div className="absolute left-1/2 top-3 -translate-x-1/2 z-10" style={{ width: 34, height: 8, borderRadius: 999, background: "rgba(255,255,255,0.55)" }} />
-
-        {/* header band */}
-        <div className="relative pt-8 pb-14 flex flex-col items-center" style={{ background: `linear-gradient(160deg, ${ACCENT} 0%, #123a33 100%)` }}>
-          <div
-            className="absolute inset-0 opacity-[0.07]"
-            style={{ backgroundImage: `radial-gradient(#fff 1px, transparent 1px)`, backgroundSize: "10px 10px" }}
-          />
-          <MasarMark size={26} on="dark" />
-          <p className="mt-2 relative" style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
-          <p className="relative" style={{ color: "rgba(255,255,255,0.7)", fontSize: 9, letterSpacing: 0.5 }}>STUDENT ID · 2026 - 2027</p>
-        </div>
-
-        {/* photo — overlapping header/body */}
-        <div className="flex justify-center -mt-12">
-          <div
-            className="rounded-full overflow-hidden flex items-center justify-center"
-            style={{ width: 88, height: 88, border: "4px solid #fff", background: SURFACE, boxShadow: "0 6px 14px rgba(22,33,29,0.25)" }}
-          >
-            {student.photo ? (
-              <img src={student.photo} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 28 }}>{student.name[0]}</span>
-            )}
+        {/* header: logo block (left) + title block (right) */}
+        <div className="flex">
+          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 92, background: "#fff" }}>
+            <MasarMark size={38} on="light" />
+          </div>
+          <div className="flex-1 flex flex-col justify-center py-3 px-4" style={{ background: ACCENT }} dir="rtl">
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 19, textAlign: "right" }}>معهد العلوم التعليمي</p>
+            <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10, letterSpacing: 1, textAlign: "right" }}>AL-ULOOM EDUCATIONAL INSTITUTE</p>
           </div>
         </div>
+        <div style={{ height: 4, background: ACCENT }} />
 
-        {/* identity */}
-        <div className="flex flex-col items-center px-5 pt-3 pb-4">
-          <p className="text-center" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{student.name}</p>
-          <p className="mt-1" style={{ color: INK_MUTED, fontSize: 11 }}>السادس الإعدادي</p>
-          <div className="mt-2 px-3 py-1 rounded-full" style={{ background: ACCENT_SOFT }}>
-            <p style={{ color: ACCENT, fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>{student.serial}</p>
+        {/* body */}
+        <div className="flex items-start gap-4 px-5 py-5" style={{ background: "#fff" }}>
+          {/* QR — left */}
+          <div className="flex-shrink-0 rounded-xl p-2" style={{ border: `2px solid ${ACCENT}` }}>
+            <QRCodeSVG value={student.serial} size={82} fgColor={INK} bgColor="#ffffff" />
           </div>
-        </div>
 
-        {/* QR */}
-        <div className="flex flex-col items-center pb-5">
-          <div className="rounded-2xl p-2.5" style={{ background: "#fff", border: `1px solid ${BORDER}` }}>
-            <QRCodeSVG value={student.serial} size={92} fgColor={INK} bgColor="#ffffff" />
+          {/* fields — middle */}
+          <div className="flex-1 flex flex-col gap-3 pt-1">
+            <IDField icon={User} label="الاسم" value={student.name} />
+            <IDField icon={Hash} label="الرقم التسلسلي" value={student.serial} />
+            <IDField icon={Layers} label="الصف" value="السادس الإعدادي" />
           </div>
-          <p className="mt-2" style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>امسح لتسجيل الحضور</p>
+
+          {/* photo — right */}
+          <div className="flex-shrink-0 flex flex-col items-center">
+            <div
+              className="rounded-xl overflow-hidden flex items-center justify-center"
+              style={{ width: 92, height: 100, border: `2.5px solid ${ACCENT}`, background: SURFACE }}
+            >
+              {student.photo ? (
+                <img src={student.photo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 26 }}>{student.name[0]}</span>
+              )}
+            </div>
+            <p className="mt-1.5 text-center" style={{ fontFamily: DISPLAY, fontWeight: 800, color: INK, fontSize: 11, letterSpacing: 0.5 }}>STUDENT ID</p>
+            <p className="text-center" style={{ color: INK_MUTED, fontSize: 8 }}>Al-Uloom Institute</p>
+          </div>
         </div>
 
         {/* footer */}
-        <div className="px-5 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
-          <p style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>هذه الهوية صالحة للاستخدام داخل معهد العلوم فقط</p>
+        <div className="px-5 py-3 text-center" style={{ background: ACCENT }}>
+          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.9)", fontFamily: SANS }}>هذه البطاقة وثيقة رسمية ملك لمعهد العلوم التعليمي، ويجب إبرازها عند الطلب</p>
         </div>
       </div>
 
-      <div className="max-w-[280px] mx-auto mt-6 no-print">
+      <div className="max-w-[360px] mx-auto mt-6 no-print">
         <button
           onClick={() => window.print()}
           className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
@@ -746,7 +809,7 @@ function getAtRiskStudents(store) {
 
 function buildParentMessage(type, studentName, subjectName, score, fullScore) {
   if (type === "absence") {
-    return `السلام عليكم أستاذ
+    return `السلام عليكم أستاذي
 
 نود إعلامكم من إدارة معهد العلوم التعليمي بأن الطالب ${studentName} لم يحضر اليوم إلى محاضرة ${subjectName}.
 
@@ -2294,6 +2357,8 @@ export default function MasarApp() {
   const store = {
     ...data,
     addTeacher: withReload(dbAddTeacher),
+    updateTeacherName: withReload(dbUpdateTeacherName),
+    deleteTeacher: withReload(dbDeleteTeacher),
     addGroup: withReload((teacherId) => {
       const teacher = data.teachers.find((t) => t.id === teacherId);
       const nextName = `M${teacher.groups.length + 1}`;

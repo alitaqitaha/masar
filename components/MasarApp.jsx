@@ -862,6 +862,7 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
   const [flashOn, setFlashOn] = useState(false);
   const [flashSupported, setFlashSupported] = useState(false);
   const [manualCode, setManualCode] = useState("");
@@ -871,16 +872,26 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
     let active = true;
     (async () => {
       try {
+        if (!window.isSecureContext) throw new Error("الموقع مو على اتصال آمن (HTTPS) — الكاميرا تحتاج اتصال آمن");
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("هذا المتصفح ما يدعم الوصول للكاميرا");
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {
+            /* some browsers need a user gesture; ignore and let element remain paused */
+          }
+        }
         setCameraOn(true);
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities ? track.getCapabilities() : {};
         setFlashSupported(Boolean(caps.torch));
       } catch (e) {
         setCameraOn(false);
+        setCameraError(e && (e.name || e.message) ? `${e.name || ""} ${e.message || ""}`.trim() : "خطأ غير معروف");
       }
     })();
     return () => {
@@ -936,11 +947,14 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
     <>
       <div className="rounded-2xl overflow-hidden mb-3 relative" style={{ background: INK, aspectRatio: "4/3" }}>
         {cameraOn ? (
-          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+          <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={(e) => e.target.play().catch(() => {})} className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 px-4 text-center">
             <ScanLine size={26} color="#fff" opacity={0.6} />
             <p className="text-xs" style={{ color: "#fff", opacity: 0.6, fontFamily: SANS }}>بانتظار إذن الكاميرا…</p>
+            {cameraError && (
+              <p className="text-xs" style={{ color: "#FCA5A5", fontFamily: SANS }}>{cameraError}</p>
+            )}
           </div>
         )}
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center pointer-events-none">

@@ -1,0 +1,2219 @@
+"use client";
+/**
+ * مسار (Masar) — نظام إدارة المعاهد
+ * جميع الحقوق محفوظة لـ علي تقي © 2026
+ * يُمنع نسخ أو إعادة توزيع هذا الكود دون إذن مسبق من المالك.
+ */
+import React, { useState, useEffect } from "react";
+import {
+  fetchAll,
+  addTeacher as dbAddTeacher,
+  addGroup as dbAddGroup,
+  addStudent as dbAddStudent,
+  addAttendanceRecord as dbAddAttendanceRecord,
+  addGradeRecord as dbAddGradeRecord,
+  addInstallment as dbAddInstallment,
+  addNotification as dbAddNotification,
+  updateEnrollment as dbUpdateEnrollment,
+  deleteStudent as dbDeleteStudent,
+} from "../lib/data";
+import {
+  ClipboardCheck,
+  ClipboardList,
+  UserPlus,
+  GraduationCap,
+  UsersRound,
+  Wallet,
+  Archive,
+  Bell,
+  Lock,
+  Eye,
+  EyeOff,
+  LogOut,
+  X,
+  Users,
+  Layers,
+  Calculator,
+  Languages,
+  FlaskConical,
+  Atom,
+  BookMarked,
+  Leaf,
+  BookOpen,
+  ChevronLeft,
+  CheckCircle2,
+  XCircle,
+  Search,
+  Camera,
+  Send,
+  AlertTriangle,
+  MessageCircle,
+  Printer,
+  Trash2,
+  Download,
+  FileDown,
+  Check,
+  Zap,
+  ZapOff,
+  ScanLine,
+} from "lucide-react";
+
+/* ============================== tokens ============================== */
+const FONT_IMPORT = `
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap');
+`;
+const INK = "#16211D";
+const INK_MUTED = "#6B7570";
+const ACCENT = "#1F4B43";
+const ACCENT_SOFT = "#E8EFEC";
+const BORDER = "#E7E9E7";
+const SURFACE = "#F7F8F7";
+const DANGER = "#B3423A";
+const SANS = "'IBM Plex Sans Arabic', sans-serif";
+const DISPLAY = "Cairo, sans-serif";
+
+let idCounter = 1000;
+const uid = (prefix) => `${prefix}-${idCounter++}`;
+const today = () => new Date().toISOString().slice(0, 10);
+
+const SUBJECTS = [
+  { id: "ar", name: "اللغة العربية", icon: BookOpen },
+  { id: "math", name: "الرياضيات", icon: Calculator },
+  { id: "en", name: "اللغة الانكليزية", icon: Languages },
+  { id: "chem", name: "الكيمياء", icon: FlaskConical },
+  { id: "phys", name: "الفيزياء", icon: Atom },
+  { id: "isl", name: "الإسلامية", icon: BookMarked },
+  { id: "bio", name: "الأحياء", icon: Leaf },
+];
+const getSubject = (id) => SUBJECTS.find((s) => s.id === id);
+
+const DAILY_ITEMS = [
+  { id: "attendance", label: "تسجيل حضور", icon: ClipboardCheck, code: false },
+  { id: "grades", label: "تسجيل درجات", icon: ClipboardList, code: false },
+  { id: "notifications", label: "الإشعارات", icon: Bell, code: false },
+  { id: "notify-parent", label: "تبليغ ولي الأمر", icon: MessageCircle, code: false },
+];
+const MANAGEMENT_ITEMS = [
+  { id: "add-student", label: "إضافة طالب", icon: UserPlus, code: true },
+  { id: "add-teacher", label: "إضافة مدرس", icon: GraduationCap, code: true },
+  { id: "add-group", label: "إضافة مجموعة", icon: UsersRound, code: true },
+  { id: "installments", label: "الأقساط", icon: Wallet, code: true },
+  { id: "archive", label: "أرشيف الطلاب", icon: Archive, code: true },
+  { id: "backup", label: "نسخة احتياطية", icon: Download, code: true },
+];
+const ALL_ITEMS = [...DAILY_ITEMS, ...MANAGEMENT_ITEMS];
+const ADMIN_USERNAME = "Alalom";
+const ADMIN_PASSWORD = "aalliitik33";
+const MANAGEMENT_CODE = "72954108"; // رمز الآيتمات المحمية
+
+/* ============================== primitives ============================== */
+function MasarMark({ size = 40, on = "dark" }) {
+  const stroke = on === "dark" ? "#FFFFFF" : ACCENT;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <path d="M6 30 C6 22, 14 22, 16 16 C18 10, 26 10, 26 6" stroke={stroke} strokeWidth="3.2" strokeLinecap="round" opacity="0.45" />
+      <path d="M6 34 C10 34, 12 27, 18 24 C24 21, 27 15, 27 9" stroke={stroke} strokeWidth="3.2" strokeLinecap="round" />
+      <circle cx="27" cy="9" r="3" fill={stroke} />
+    </svg>
+  );
+}
+function LogoBadge({ size = 44 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: size * 0.28, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <MasarMark size={size * 0.6} on="dark" />
+    </div>
+  );
+}
+function PathDivider() {
+  return (
+    <div className="flex items-center gap-1.5 py-1" aria-hidden="true">
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: ACCENT }} />
+      <span style={{ flex: 1, height: 1, backgroundImage: `repeating-linear-gradient(to left, ${BORDER} 0 6px, transparent 6px 12px)` }} />
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div className="mb-4">
+      {label && <label className="block text-sm mb-1.5" style={{ color: INK, fontFamily: SANS }}>{label}</label>}
+      {children}
+    </div>
+  );
+}
+const inputStyle = { borderColor: BORDER, color: INK, fontFamily: SANS };
+function TextInput(props) {
+  return (
+    <input
+      {...props}
+      className={"w-full rounded-xl px-4 py-3 text-sm outline-none border transition-colors " + (props.className || "")}
+      style={inputStyle}
+      onFocus={(e) => (e.target.style.borderColor = ACCENT)}
+      onBlur={(e) => (e.target.style.borderColor = BORDER)}
+    />
+  );
+}
+function Select(props) {
+  return (
+    <select
+      {...props}
+      className={"w-full rounded-xl px-4 py-3 text-sm outline-none border bg-white " + (props.className || "")}
+      style={inputStyle}
+    >
+      {props.children}
+    </select>
+  );
+}
+function PrimaryButton({ children, ...props }) {
+  return (
+    <button {...props} className={"w-full rounded-xl py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40 " + (props.className || "")} style={{ background: ACCENT, fontFamily: SANS }}>
+      {children}
+    </button>
+  );
+}
+function Chip({ active, children, ...props }) {
+  return (
+    <button
+      {...props}
+      className="px-3.5 py-2 rounded-full text-xs font-medium border transition-colors"
+      style={{
+        borderColor: active ? ACCENT : BORDER,
+        background: active ? ACCENT_SOFT : "#fff",
+        color: active ? ACCENT : INK_MUTED,
+        fontFamily: SANS,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+function SuccessNote({ children }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl px-4 py-3 mb-4" style={{ background: ACCENT_SOFT, fontFamily: SANS }}>
+      <Check size={15} style={{ color: ACCENT }} />
+      <span className="text-xs" style={{ color: ACCENT }}>{children}</span>
+    </div>
+  );
+}
+function BackHeader({ title, onBack }) {
+  return (
+    <div className="flex items-center gap-3 mb-6">
+      <button onClick={onBack} style={{ color: ACCENT }} aria-label="رجوع">
+        <ChevronLeft size={20} />
+      </button>
+      <h2 className="text-lg" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{title}</h2>
+    </div>
+  );
+}
+function ScreenShell({ title, onBack, children }) {
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-16" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <BackHeader title={title} onBack={onBack} />
+      {children}
+    </div>
+  );
+}
+
+/* ============================== login ============================== */
+function RoleToggle({ role, setRole }) {
+  return (
+    <div className="flex p-1 rounded-xl mb-6" style={{ background: SURFACE, fontFamily: SANS }}>
+      {[{ id: "admin", label: "دخول الإدارة" }, { id: "student", label: "دخول الطالب" }].map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          onClick={() => setRole(opt.id)}
+          className="flex-1 text-xs py-2.5 rounded-lg font-medium transition-colors"
+          style={{ background: role === opt.id ? "#fff" : "transparent", color: role === opt.id ? INK : INK_MUTED, boxShadow: role === opt.id ? "0 1px 2px rgba(22,33,29,0.08)" : "none" }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+function LoginScreen({ students, onLogin }) {
+  const [role, setRole] = useState("admin");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    setError("");
+    if (role === "admin") {
+      if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) onLogin("admin");
+      else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    } else {
+      const match = students.find((s) => s.username === username && s.password === password);
+      if (match) onLogin("student", match.id);
+      else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    }
+  };
+
+  return (
+    <div dir="rtl" className="min-h-screen flex items-center justify-center px-5 py-10" style={{ background: "#FFFFFF" }}>
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-8">
+          <LogoBadge size={60} />
+          <h1 className="mt-4 text-3xl" style={{ fontFamily: DISPLAY, fontWeight: 800, color: INK }}>مسار</h1>
+          <div className="w-24 mt-2"><PathDivider /></div>
+          <p className="mt-2 text-sm" style={{ fontFamily: SANS, color: INK_MUTED }}>نظام إدارة المعاهد</p>
+        </div>
+
+        <form onSubmit={submit} className="border rounded-2xl p-6" style={{ borderColor: BORDER, fontFamily: SANS }}>
+          <RoleToggle role={role} setRole={(r) => { setRole(r); setError(""); }} />
+          <label className="block text-sm mb-1.5" style={{ color: INK }}>اسم المستخدم</label>
+          <input required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="أدخل اسم المستخدم"
+            className="w-full mb-4 rounded-xl px-4 py-3 text-sm outline-none border transition-colors" style={{ borderColor: BORDER, color: INK }}
+            onFocus={(e) => (e.target.style.borderColor = ACCENT)} onBlur={(e) => (e.target.style.borderColor = BORDER)} />
+          <label className="block text-sm mb-1.5" style={{ color: INK }}>كلمة المرور</label>
+          <div className="relative mb-2">
+            <input required type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="أدخل كلمة المرور"
+              className="w-full rounded-xl px-4 py-3 pl-11 text-sm outline-none border transition-colors" style={{ borderColor: BORDER, color: INK }}
+              onFocus={(e) => (e.target.style.borderColor = ACCENT)} onBlur={(e) => (e.target.style.borderColor = BORDER)} />
+            <button type="button" onClick={() => setShowPass((s) => !s)} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: INK_MUTED }} aria-label="إظهار">
+              {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          {error && <p className="text-xs mb-4" style={{ color: DANGER }}>{error}</p>}
+          <div className="mt-4"><PrimaryButton type="submit">تسجيل الدخول</PrimaryButton></div>
+        </form>
+        <p className="text-center text-xs mt-6" style={{ color: INK_MUTED, fontFamily: SANS }}>جميع الحقوق محفوظة © 2026 مسار</p>
+        <p className="text-center text-xs mt-1" style={{ color: INK_MUTED, fontFamily: SANS }}>تطوير: علي تقي</p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== code gate ============================== */
+function CodeModal({ item, onClose, onSuccess }) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const locked = attempts >= 5;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (locked) return;
+    if (code === MANAGEMENT_CODE) onSuccess();
+    else {
+      setError(true);
+      setAttempts((a) => a + 1);
+    }
+  };
+
+  return (
+    <div dir="rtl" className="fixed inset-0 z-50 flex items-center justify-center px-5" style={{ background: "rgba(22,33,29,0.35)" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xs bg-white rounded-2xl p-6 border" style={{ borderColor: BORDER, fontFamily: SANS }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2"><Lock size={16} style={{ color: ACCENT }} /><span className="text-sm font-semibold" style={{ color: INK }}>رمز الوصول</span></div>
+          <button onClick={onClose} style={{ color: INK_MUTED }} aria-label="إغلاق"><X size={18} /></button>
+        </div>
+        <p className="text-xs mb-4" style={{ color: INK_MUTED }}>هذا القسم محمي. أدخل رمز الوصول للمتابعة إلى «{item.label}».</p>
+        <form onSubmit={submit}>
+          <input autoFocus disabled={locked} value={code} onChange={(e) => { setCode(e.target.value); setError(false); }} placeholder="••••••••"
+            className="w-full text-center tracking-widest rounded-xl px-4 py-3 text-sm outline-none border mb-1" style={{ borderColor: error ? DANGER : BORDER, color: INK }} />
+          {error && !locked && <p className="text-xs mb-3" style={{ color: DANGER }}>الرمز غير صحيح ({5 - attempts} محاولات متبقية)</p>}
+          {locked && <p className="text-xs mb-3" style={{ color: DANGER }}>تم إيقاف المحاولات مؤقتاً بعد عدة رموز خاطئة. أغلق وحاول لاحقاً.</p>}
+          <PrimaryButton type="submit" className="mt-3" disabled={locked}>دخول</PrimaryButton>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== admin: small widgets ============================== */
+function StatCard({ icon: Icon, value, label }) {
+  return (
+    <div className="flex-1 rounded-2xl border p-4 flex flex-col gap-2.5" style={{ borderColor: BORDER }}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: ACCENT_SOFT }}><Icon size={15} style={{ color: ACCENT }} /></div>
+      <div>
+        <p className="text-xl leading-none" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{value}</p>
+        <p className="text-xs mt-1" style={{ color: INK_MUTED }}>{label}</p>
+      </div>
+    </div>
+  );
+}
+function ItemRow({ item, locked, onClick }) {
+  const Icon = item.icon;
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right transition-colors" style={{ borderColor: BORDER, fontFamily: SANS }}>
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }}><Icon size={19} style={{ color: ACCENT }} /></div>
+      <span className="flex-1 text-sm font-medium" style={{ color: INK }}>{item.label}</span>
+      {locked && <Lock size={14} style={{ color: INK_MUTED }} />}
+    </button>
+  );
+}
+function TeacherPicker({ teachers, value, onChange }) {
+  return (
+    <div className="flex flex-col gap-2.5 mb-5">
+      {teachers.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه مدرسين مضافين بعد.</p>}
+      {teachers.map((t) => {
+        const subj = getSubject(t.subjectId);
+        const Icon = subj.icon;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right"
+            style={{ borderColor: value === t.id ? ACCENT : BORDER, background: value === t.id ? ACCENT_SOFT : "#fff" }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}><Icon size={17} style={{ color: ACCENT }} /></div>
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: INK }}>{t.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{subj.name}</p>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+function GroupPicker({ groups, value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-2 mb-5">
+      {groups.map((g) => <Chip key={g.id} active={value === g.id} onClick={() => onChange(g.id)}>{g.name}</Chip>)}
+    </div>
+  );
+}
+
+/* ============================== add teacher ============================== */
+function TeacherDetailScreen({ store, teacher, onBack }) {
+  const subj = getSubject(teacher.subjectId);
+  return (
+    <ScreenShell title={teacher.name} onBack={onBack}>
+      <div className="flex items-center gap-2 mb-6 text-xs" style={{ color: INK_MUTED }}>
+        <subj.icon size={14} style={{ color: ACCENT }} />
+        {subj.name} · {teacher.groups.length} مجموعة
+      </div>
+      <div className="flex flex-col gap-4">
+        {teacher.groups.map((g) => {
+          const groupStudents = store.students.filter((s) => s.enrollments[teacher.subjectId]?.teacherId === teacher.id && s.enrollments[teacher.subjectId]?.groupId === g.id);
+          return (
+            <div key={g.id}>
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-sm font-semibold" style={{ color: INK, fontFamily: DISPLAY }}>{g.name}</p>
+                <span className="text-xs" style={{ color: INK_MUTED }}>{groupStudents.length} طالب</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {groupStudents.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه طلاب بهذي المجموعة بعد.</p>}
+                {groupStudents.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE }}>
+                      {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 12 }}>{s.name[0]}</span>}
+                    </div>
+                    <div>
+                      <p className="text-sm" style={{ color: INK }}>{s.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+function AddTeacherScreen({ store, onBack }) {
+  const [name, setName] = useState("");
+  const [subjectId, setSubjectId] = useState(SUBJECTS[0].id);
+  const [done, setDone] = useState(false);
+  const [openTeacherId, setOpenTeacherId] = useState(null);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    store.addTeacher({ name: name.trim(), subjectId });
+    setName("");
+    setDone(true);
+    setTimeout(() => setDone(false), 2500);
+  };
+
+  const openTeacher = store.teachers.find((t) => t.id === openTeacherId);
+  if (openTeacher) {
+    return <TeacherDetailScreen store={store} teacher={openTeacher} onBack={() => setOpenTeacherId(null)} />;
+  }
+
+  return (
+    <ScreenShell title="إضافة مدرس" onBack={onBack}>
+      {done && <SuccessNote>تمت إضافة المدرس، وتوفرت له مجموعة M1 تلقائياً.</SuccessNote>}
+      <form onSubmit={submit}>
+        <Field label="اسم المدرس"><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: أحمد الزيادي" required /></Field>
+        <Field label="المادة">
+          <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+            {SUBJECTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </Select>
+        </Field>
+        <PrimaryButton type="submit">إضافة المدرس</PrimaryButton>
+      </form>
+
+      <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>المدرسون الحاليون</p>
+      <div className="flex flex-col gap-2.5">
+        {store.teachers.map((t) => {
+          const subj = getSubject(t.subjectId);
+          return (
+            <button key={t.id} onClick={() => setOpenTeacherId(t.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{t.name}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{subj.name} · {t.groups.length} مجموعة</p>
+              </div>
+              <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+            </button>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== add group ============================== */
+function AddGroupScreen({ store, onBack }) {
+  const [teacherId, setTeacherId] = useState(store.teachers[0]?.id || "");
+  const [done, setDone] = useState(false);
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+
+  const submit = () => {
+    if (!teacherId) return;
+    store.addGroup(teacherId);
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+
+  return (
+    <ScreenShell title="إضافة مجموعة" onBack={onBack}>
+      {done && <SuccessNote>تمت إضافة مجموعة جديدة للمدرس.</SuccessNote>}
+      <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
+      <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
+      {teacher && (
+        <>
+          <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>مجموعات {teacher.name} الحالية</p>
+          <div className="flex flex-wrap gap-2 mb-6">{teacher.groups.map((g) => <Chip key={g.id}>{g.name}</Chip>)}</div>
+          <PrimaryButton onClick={submit}>إضافة مجموعة جديدة</PrimaryButton>
+        </>
+      )}
+    </ScreenShell>
+  );
+}
+
+/* ============================== add student ============================== */
+/* ============================== barcode + student ID card ============================== */
+const CODE39_PATTERNS = {
+  "0": "NNNWWNWNN", "1": "WNNWNNNNW", "2": "NNWWNNNNW", "3": "WNWWNNNNN", "4": "NNNWWNNNW",
+  "5": "WNNWWNNNN", "6": "NNWWWNNNN", "7": "NNNWNNWNW", "8": "WNNWNNWNN", "9": "NNWWNNWNN",
+  "*": "NNNWNWNWN",
+};
+function buildCode39Bars(value) {
+  const full = `*${value}*`;
+  const bars = [];
+  for (let c = 0; c < full.length; c++) {
+    const pattern = CODE39_PATTERNS[full[c]];
+    if (!pattern) continue;
+    for (let i = 0; i < pattern.length; i++) {
+      bars.push({ isBar: i % 2 === 0, wide: pattern[i] === "W" });
+    }
+    if (c < full.length - 1) bars.push({ isBar: false, wide: false });
+  }
+  return bars;
+}
+function Barcode({ value, height = 56, unit = 2.2 }) {
+  const bars = buildCode39Bars(value);
+  let x = 0;
+  const rects = [];
+  bars.forEach((b, i) => {
+    const w = (b.wide ? 3 : 1) * unit;
+    if (b.isBar) rects.push(<rect key={i} x={x} y={0} width={w} height={height} fill={INK} />);
+    x += w;
+  });
+  return (
+    <svg width={x} height={height} viewBox={`0 0 ${x} ${height}`} style={{ display: "block" }}>
+      {rects}
+    </svg>
+  );
+}
+
+function FieldTag({ label, value, bold }) {
+  return (
+    <div>
+      <span
+        className="inline-block px-2 py-0.5 rounded text-white mb-1"
+        style={{ background: ACCENT, fontSize: 9, fontFamily: SANS }}
+      >
+        {label}
+      </span>
+      <p
+        style={{
+          fontFamily: bold ? DISPLAY : SANS,
+          fontWeight: bold ? 700 : 500,
+          fontSize: bold ? 13 : 12,
+          color: INK,
+          borderBottom: `1px solid ${BORDER}`,
+          paddingBottom: 3,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function IDCardPrintScreen({ student, onBack }) {
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #id-card-print, #id-card-print * { visibility: visible; }
+          #id-card-print { position: fixed; inset: 0; margin: auto; box-shadow: none !important; }
+        }
+      `}</style>
+
+      <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
+
+      <div
+        id="id-card-print"
+        className="relative mx-auto rounded-2xl overflow-hidden"
+        style={{ maxWidth: 380, border: "3px solid #C9A227", boxShadow: "0 12px 28px rgba(22,33,29,0.18)" }}
+      >
+        {/* watermark */}
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ transform: "rotate(-14deg) scale(2.4)", opacity: 0.05 }}
+        >
+          <MasarMark size={220} on="light" />
+        </div>
+
+        {/* header */}
+        <div
+          className="relative flex items-center gap-3 px-4 py-3.5"
+          style={{ background: `linear-gradient(135deg, ${ACCENT} 0%, #123a33 100%)` }}
+        >
+          <LogoBadge size={36} />
+          <div className="flex-1">
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 16 }}>معهد العلوم</p>
+            <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 9, letterSpacing: 0.5 }}>AL-OLOOM INSTITUTE · STUDENT ID</p>
+          </div>
+          <div className="text-left">
+            <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 9 }}>صالحة لعام</p>
+            <p style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>2026 - 2027</p>
+          </div>
+        </div>
+        <div style={{ height: 3, background: "linear-gradient(90deg, #C9A227, #E8CE6E, #C9A227)" }} />
+
+        {/* body */}
+        <div className="relative flex gap-3 p-4" style={{ background: "#fff" }}>
+          <div
+            className="rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center"
+            style={{ width: 80, height: 98, border: `2.5px solid ${ACCENT}`, background: SURFACE, boxShadow: "0 2px 6px rgba(22,33,29,0.15)" }}
+          >
+            {student.photo ? (
+              <img src={student.photo} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 24 }}>{student.name[0]}</span>
+            )}
+          </div>
+
+          <div className="flex-1 flex flex-col gap-2.5 justify-center">
+            <FieldTag label="الاسم" value={student.name} bold />
+            <FieldTag label="الرقم التسلسلي" value={student.serial} />
+            <FieldTag label="الصف" value="السادس الإعدادي" />
+          </div>
+
+          <div
+            className="flex flex-col items-center justify-center gap-1.5 rounded-xl p-2 flex-shrink-0"
+            style={{ background: SURFACE, border: `1px solid ${BORDER}`, minWidth: 92 }}
+          >
+            <p style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>امسح للحضور</p>
+            <Barcode value={student.serial} height={40} unit={1.5} />
+            <p style={{ fontSize: 9, color: INK_MUTED, letterSpacing: 1 }}>{student.serial}</p>
+          </div>
+        </div>
+
+        {/* seal */}
+        <div
+          className="absolute flex flex-col items-center justify-center rounded-full"
+          style={{
+            width: 46, height: 46, left: 10, bottom: 34,
+            background: "rgba(31,75,67,0.06)", border: `1.5px dashed ${ACCENT}`,
+          }}
+        >
+          <MasarMark size={20} on="light" />
+        </div>
+
+        {/* footer */}
+        <div className="relative px-4 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
+          <p style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>هذه الهوية صالحة للاستخدام داخل معهد العلوم فقط</p>
+        </div>
+      </div>
+
+      <div className="max-w-[380px] mx-auto mt-6 no-print">
+        <button
+          onClick={() => window.print()}
+          className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
+          style={{ background: ACCENT }}
+        >
+          <Printer size={16} /> طباعة / حفظ كملف PDF
+        </button>
+        <p className="text-xs text-center mt-3" style={{ color: INK_MUTED }}>
+          بعد الضغط، اختر «حفظ كـ PDF» بدل الطابعة، بعدها تقدر تشارك الملف مباشرة بتلغرام أو واتساب.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AddStudentScreen({ store, onBack }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [photo, setPhoto] = useState(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [enroll, setEnroll] = useState({});
+  const [done, setDone] = useState(null);
+  const [showCard, setShowCard] = useState(false);
+
+  const handlePhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const setSubjectTeacher = (subjectId, teacherId) => {
+    setEnroll((prev) => ({ ...prev, [subjectId]: teacherId ? { teacherId, groupId: "" } : undefined }));
+  };
+  const setSubjectGroup = (subjectId, groupId) => {
+    setEnroll((prev) => ({ ...prev, [subjectId]: { ...prev[subjectId], groupId } }));
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim() || !username.trim() || !password.trim()) return;
+    const enrollments = {};
+    Object.entries(enroll).forEach(([subjectId, v]) => {
+      if (v && v.teacherId && v.groupId) enrollments[subjectId] = v;
+    });
+    const serial = store.addStudent({ name: name.trim(), phone, parentPhone, photo, username: username.trim(), password: password.trim(), enrollments });
+    setDone(serial);
+    setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
+  };
+
+  const newStudent = done ? store.students.find((s) => s.serial === done) : null;
+
+  if (showCard && newStudent) {
+    return <IDCardPrintScreen student={newStudent} onBack={() => setShowCard(false)} />;
+  }
+
+  return (
+    <ScreenShell title="إضافة طالب" onBack={onBack}>
+      {done && (
+        <div className="rounded-xl px-4 py-3 mb-4" style={{ background: ACCENT_SOFT }}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <Check size={15} style={{ color: ACCENT }} />
+            <span className="text-xs" style={{ color: ACCENT }}>تمت إضافة الطالب بالرقم التسلسلي {done}.</span>
+          </div>
+          <button
+            onClick={() => setShowCard(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white"
+            style={{ background: ACCENT, fontFamily: SANS }}
+          >
+            <Printer size={14} /> طباعة هوية الطالب
+          </button>
+        </div>
+      )}
+      <form onSubmit={submit}>
+        <div className="flex items-center gap-4 mb-5">
+          <label className="relative cursor-pointer">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+              {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <Camera size={20} style={{ color: INK_MUTED }} />}
+            </div>
+            <input type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
+          </label>
+          <p className="text-xs" style={{ color: INK_MUTED }}>اضغط لرفع صورة الطالب</p>
+        </div>
+
+        <Field label="الاسم الثلاثي"><TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: مصطفى علاء حسين" required /></Field>
+        <Field label="رقم الطالب"><TextInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxxx" /></Field>
+        <Field label="رقم ولي الأمر"><TextInput value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} placeholder="07xxxxxxxxx" /></Field>
+
+        <p className="text-xs font-semibold mb-3 mt-2" style={{ color: INK_MUTED }}>المواد والمدرسون</p>
+        <div className="flex flex-col gap-3 mb-2">
+          {SUBJECTS.map((subj) => {
+            const teachersForSubject = store.teachers.filter((t) => t.subjectId === subj.id);
+            const current = enroll[subj.id];
+            const currentTeacher = teachersForSubject.find((t) => t.id === current?.teacherId);
+            return (
+              <div key={subj.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+                <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{subj.name}</p>
+                <Select value={current?.teacherId || ""} onChange={(e) => setSubjectTeacher(subj.id, e.target.value)} className="mb-2">
+                  <option value="">— غير مسجل —</option>
+                  {teachersForSubject.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </Select>
+                {currentTeacher && (
+                  <Select value={current?.groupId || ""} onChange={(e) => setSubjectGroup(subj.id, e.target.value)}>
+                    <option value="">اختر المجموعة</option>
+                    {currentTeacher.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </Select>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-xs font-semibold mb-3 mt-4" style={{ color: INK_MUTED }}>بيانات الدخول</p>
+        <Field label="اسم المستخدم"><TextInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اسم مستخدم الطالب" required /></Field>
+        <Field label="كلمة المرور"><TextInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="كلمة مرور الطالب" required /></Field>
+
+        <PrimaryButton type="submit">حفظ الطالب</PrimaryButton>
+      </form>
+    </ScreenShell>
+  );
+}
+
+/* ============================== early warning + whatsapp ============================== */
+function getAtRiskStudents(store) {
+  const flags = [];
+  store.students.forEach((student) => {
+    Object.entries(student.enrollments).forEach(([subjectId, enr]) => {
+      const attRecords = store.attendanceRecords
+        .filter((r) => r.subjectId === subjectId && r.teacherId === enr.teacherId && r.groupId === enr.groupId && r.allGroupStudentIds.includes(student.id))
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      let consecutiveAbsences = 0;
+      for (const r of attRecords) {
+        if (!r.presentIds.includes(student.id)) consecutiveAbsences++;
+        else break;
+      }
+      if (consecutiveAbsences >= 3) {
+        flags.push({ studentId: student.id, subjectId, type: "absence", detail: `${consecutiveAbsences} غيابات متتالية` });
+      }
+
+      const gradeRecs = store.gradeRecords
+        .filter((r) => r.subjectId === subjectId && r.teacherId === enr.teacherId && r.groupId === enr.groupId && r.results[student.id])
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+        .slice(0, 2);
+      if (gradeRecs.length === 2) {
+        const bothLow = gradeRecs.every((r) => {
+          const res = r.results[student.id];
+          return res.status === "طبيعي" && res.score !== "" && r.passScore && Number(res.score) < Number(r.passScore);
+        });
+        if (bothLow) {
+          const latest = gradeRecs[0];
+          flags.push({
+            studentId: student.id,
+            subjectId,
+            type: "decline",
+            detail: `آخر درجة: ${latest.results[student.id].score}/${latest.fullScore}`,
+            score: latest.results[student.id].score,
+            fullScore: latest.fullScore,
+          });
+        }
+      }
+    });
+  });
+  return flags;
+}
+
+function buildParentMessage(type, studentName, subjectName, score, fullScore) {
+  if (type === "absence") {
+    return `السلام عليكم أستاذي
+
+نود إعلامكم من إدارة معهد العلوم التعليمي بأن الطالب ${studentName} لم يحضر اليوم إلى محاضرة ${subjectName}.
+
+نرجو منكم التفضل بالاطلاع على سبب الغياب، ومتابعة التزام الطالب بالمحاضرات حرصاً على مستواه الدراسي.
+
+مع التقدير والاحترام
+إدارة معهد العلوم التعليمي`;
+  }
+  return `السلام عليكم أستاذي
+
+نود إعلامكم من إدارة معهد العلوم التعليمي بأن نتائج الطالب ${studentName} بمادة ${subjectName} شهدت تراجعاً، حيث حصل على درجة ${score}${fullScore ? `/${fullScore}` : ""} بآخر امتحان.
+
+نرجو منكم متابعة الطالب ومساعدته لتجاوز هذه المرحلة حرصاً على مستواه الدراسي.
+
+مع التقدير والاحترام
+إدارة معهد العلوم التعليمي`;
+}
+
+function normalizePhone(phone) {
+  if (!phone) return null;
+  let p = phone.replace(/[^\d+]/g, "");
+  if (p.startsWith("+")) p = p.slice(1);
+  if (p.startsWith("0")) p = "964" + p.slice(1);
+  else if (!p.startsWith("964")) p = "964" + p;
+  return p;
+}
+
+function openWhatsapp(phone, message) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) {
+    alert("رقم ولي الأمر غير مسجل لهذا الطالب");
+    return;
+  }
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
+}
+
+/* ============================== attendance ============================== */
+function studentsInGroup(students, subjectId, teacherId, groupId) {
+  return students.filter((s) => s.enrollments[subjectId]?.teacherId === teacherId && s.enrollments[subjectId]?.groupId === groupId);
+}
+function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [flashOn, setFlashOn] = useState(false);
+  const [flashSupported, setFlashSupported] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [feedback, setFeedback] = useState(null); // { ok: bool, text: string }
+
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        setCameraOn(true);
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        setFlashSupported(Boolean(caps.torch));
+      } catch (e) {
+        setCameraOn(false);
+      }
+    })();
+    return () => {
+      active = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const toggleFlash = async () => {
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !flashOn }] });
+      setFlashOn((f) => !f);
+    } catch (e) {
+      /* not supported on this device */
+    }
+  };
+
+  const scanStudent = (student) => {
+    if (presentIds.includes(student.id)) {
+      setFeedback({ ok: false, text: `${student.name} مسجل حاضر مسبقاً` });
+    } else {
+      onScan(student.id);
+      setFeedback({ ok: true, text: `تم تسجيل ${student.name} حاضراً` });
+    }
+    setManualCode("");
+    setTimeout(() => setFeedback(null), 2200);
+  };
+
+  const submitCode = (e) => {
+    e?.preventDefault();
+    const code = manualCode.trim();
+    if (!code) return;
+    const lower = code.toLowerCase();
+    const student = roster.find((s) => s.serial.toLowerCase() === lower || s.serial.toLowerCase().endsWith(lower)) || roster.find((s) => s.name.includes(code));
+    if (!student) {
+      setFeedback({ ok: false, text: "ما لقيت هذا الاسم أو الرقم بهالمجموعة" });
+      setManualCode("");
+      setTimeout(() => setFeedback(null), 2200);
+    } else {
+      scanStudent(student);
+    }
+  };
+
+  const suggestions = manualCode.trim()
+    ? roster.filter((s) => !presentIds.includes(s.id) && (s.name.includes(manualCode.trim()) || s.serial.includes(manualCode.trim()))).slice(0, 5)
+    : [];
+
+  const scannedList = roster.filter((s) => presentIds.includes(s.id));
+
+  return (
+    <>
+      <div className="rounded-2xl overflow-hidden mb-3 relative" style={{ background: INK, aspectRatio: "4/3" }}>
+        {cameraOn ? (
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+            <ScanLine size={26} color="#fff" opacity={0.6} />
+            <p className="text-xs" style={{ color: "#fff", opacity: 0.6, fontFamily: SANS }}>بانتظار إذن الكاميرا…</p>
+          </div>
+        )}
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center pointer-events-none">
+          <div style={{ width: "70%", height: 2, background: ACCENT, opacity: 0.85, boxShadow: `0 0 8px ${ACCENT}` }} />
+        </div>
+        {flashSupported && (
+          <button onClick={toggleFlash} className="absolute bottom-3 left-3 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)" }} aria-label="فلاش">
+            {flashOn ? <Zap size={16} color="#fff" /> : <ZapOff size={16} color="#fff" />}
+          </button>
+        )}
+      </div>
+
+      {feedback && (
+        <div className="rounded-xl px-4 py-2.5 mb-3 text-xs" style={{ background: feedback.ok ? ACCENT_SOFT : "#FBEAE8", color: feedback.ok ? ACCENT : DANGER, fontFamily: SANS }}>
+          {feedback.text}
+        </div>
+      )}
+
+      <form onSubmit={submitCode} className="flex gap-2 mb-2">
+        <input
+          value={manualCode}
+          onChange={(e) => setManualCode(e.target.value)}
+          placeholder="أو اكتب اسم الطالب أو رقمه التسلسلي"
+          className="flex-1 rounded-xl px-4 py-3 text-sm outline-none border"
+          style={{ borderColor: BORDER, color: INK, fontFamily: SANS }}
+        />
+        <button type="submit" className="px-4 rounded-xl text-white text-sm font-semibold" style={{ background: ACCENT }}>تسجيل</button>
+      </form>
+
+      {suggestions.length > 0 && (
+        <div className="flex flex-col gap-2 mb-4">
+          {suggestions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => scanStudent(s)}
+              className="w-full flex items-center justify-between p-3 rounded-xl border text-right"
+              style={{ borderColor: BORDER, fontFamily: SANS }}
+            >
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+              </div>
+              <span className="text-xs" style={{ color: ACCENT }}>تسجيل حضور</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mb-4" />
+
+      <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>سُجّلوا حاضرين بهذي الجلسة ({scannedList.length}/{roster.length})</p>
+      <div className="flex flex-col gap-2.5 mb-6">
+        {scannedList.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه أحد لسه.</p>}
+        {scannedList.map((s) => (
+          <div key={s.id} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: ACCENT, background: ACCENT_SOFT }}>
+            <div>
+              <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+            </div>
+            <CheckCircle2 size={16} style={{ color: ACCENT }} />
+          </div>
+        ))}
+      </div>
+
+      {roster.length > 0 && <PrimaryButton onClick={onFinish}>تم</PrimaryButton>}
+    </>
+  );
+}
+
+function AttendanceScreen({ store, onBack }) {
+  const [teacherId, setTeacherId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [presentIds, setPresentIds] = useState([]);
+  const [done, setDone] = useState(false);
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+  const roster = teacher && groupId ? studentsInGroup(store.students, teacher.subjectId, teacherId, groupId) : [];
+
+  const finish = () => {
+    store.addAttendanceRecord({ subjectId: teacher.subjectId, teacherId, groupId, presentIds, allGroupStudentIds: roster.map((s) => s.id) });
+    setDone(true);
+    setTimeout(() => { setDone(false); setTeacherId(""); setGroupId(""); setPresentIds([]); }, 2200);
+  };
+
+  if (done) {
+    return (
+      <ScreenShell title="تسجيل حضور" onBack={onBack}>
+        <SuccessNote>تم حفظ الحضور، وأُرسل إشعار لكل طالب بحالته.</SuccessNote>
+      </ScreenShell>
+    );
+  }
+
+  if (!teacherId) {
+    return (
+      <ScreenShell title="تسجيل حضور" onBack={onBack}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
+        <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
+      </ScreenShell>
+    );
+  }
+  if (!groupId) {
+    return (
+      <ScreenShell title={teacher.name} onBack={() => setTeacherId("")}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المجموعة</p>
+        <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />
+      </ScreenShell>
+    );
+  }
+  return (
+    <ScreenShell title={`${teacher.name} · ${teacher.groups.find((g) => g.id === groupId)?.name}`} onBack={() => setGroupId("")}>
+      <BarcodeScanStep
+        roster={roster}
+        presentIds={presentIds}
+        onScan={(id) => setPresentIds((prev) => [...prev, id])}
+        onFinish={finish}
+      />
+    </ScreenShell>
+  );
+}
+
+/* ============================== grades ============================== */
+function GradesScreen({ store, onBack }) {
+  const [teacherId, setTeacherId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [examName, setExamName] = useState("");
+  const [examType, setExamType] = useState("يومي");
+  const [date, setDate] = useState(today());
+  const [passScore, setPassScore] = useState("");
+  const [fullScore, setFullScore] = useState("");
+  const [examConfirmed, setExamConfirmed] = useState(false);
+  const [results, setResults] = useState({});
+  const [query, setQuery] = useState("");
+  const [done, setDone] = useState(false);
+
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+  const roster = teacher && groupId ? studentsInGroup(store.students, teacher.subjectId, teacherId, groupId) : [];
+  const filtered = roster.filter((s) => s.name.includes(query) || s.serial.includes(query));
+
+  const setStatus = (id, status) => setResults((prev) => ({ ...prev, [id]: { status, score: status === "طبيعي" ? prev[id]?.score || "" : "" } }));
+  const setScore = (id, score) => setResults((prev) => ({ ...prev, [id]: { ...prev[id], score } }));
+
+  const finish = () => {
+    store.addGradeRecord({ subjectId: teacher.subjectId, teacherId, groupId, examName, examType, date, passScore, fullScore, results });
+    setDone(true);
+    setTimeout(() => { setDone(false); setTeacherId(""); setGroupId(""); setExamConfirmed(false); setExamName(""); setResults({}); }, 2200);
+  };
+
+  if (done) return <ScreenShell title="تسجيل درجات" onBack={onBack}><SuccessNote>تم حفظ درجات «{examName}».</SuccessNote></ScreenShell>;
+
+  if (!teacherId) {
+    return (
+      <ScreenShell title="تسجيل درجات" onBack={onBack}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
+        <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
+      </ScreenShell>
+    );
+  }
+  if (!groupId) {
+    return (
+      <ScreenShell title={teacher.name} onBack={() => setTeacherId("")}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المجموعة</p>
+        <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />
+      </ScreenShell>
+    );
+  }
+  if (!examConfirmed) {
+    return (
+      <ScreenShell title="بيانات الامتحان" onBack={() => setGroupId("")}>
+        <Field label="اسم الامتحان"><TextInput value={examName} onChange={(e) => setExamName(e.target.value)} placeholder="مثال: امتحان تراكمي 2" /></Field>
+        <Field label="نوع الامتحان">
+          <Select value={examType} onChange={(e) => setExamType(e.target.value)}>
+            <option value="يومي">يومي</option>
+            <option value="تراكمي">تراكمي</option>
+            <option value="فاينل">فاينل</option>
+          </Select>
+        </Field>
+        <Field label="التاريخ"><TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="درجة النجاح"><TextInput type="number" value={passScore} onChange={(e) => setPassScore(e.target.value)} placeholder="مثال: 15" /></Field>
+          <Field label="الدرجة الكاملة"><TextInput type="number" value={fullScore} onChange={(e) => setFullScore(e.target.value)} placeholder="مثال: 30" /></Field>
+        </div>
+        <PrimaryButton
+          disabled={!examName.trim() || !fullScore}
+          onClick={() => {
+            setResults((prev) => {
+              const next = { ...prev };
+              roster.forEach((s) => {
+                if (!next[s.id]) next[s.id] = { status: "طبيعي", score: "" };
+              });
+              return next;
+            });
+            setExamConfirmed(true);
+          }}
+        >
+          متابعة لقائمة الطلاب
+        </PrimaryButton>
+      </ScreenShell>
+    );
+  }
+
+  return (
+    <ScreenShell title={examName} onBack={() => setExamConfirmed(false)}>
+      <div className="relative mb-5">
+        <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه"
+          className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+      </div>
+      <div className="flex flex-col gap-3 mb-6">
+        {filtered.map((s) => {
+          const r = results[s.id];
+          return (
+            <div key={s.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{s.name}</p>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {["طبيعي", "غش", "مجاز"].map((st) => (
+                  <Chip key={st} active={r?.status === st} onClick={() => setStatus(s.id, st)}>{st}</Chip>
+                ))}
+              </div>
+              {r?.status === "طبيعي" && (
+                <input type="number" placeholder={`الدرجة من ${fullScore || "؟"}`} value={r.score} onChange={(e) => setScore(s.id, e.target.value)}
+                  className="w-full mt-1 rounded-xl px-3 py-2.5 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <PrimaryButton onClick={finish}>تم</PrimaryButton>
+    </ScreenShell>
+  );
+}
+
+/* ============================== installments ============================== */
+function InstallmentsScreen({ store, onBack }) {
+  const [query, setQuery] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [amountNumber, setAmountNumber] = useState("");
+  const [amountText, setAmountText] = useState("");
+  const [remaining, setRemaining] = useState("");
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState(false);
+
+  const student = store.students.find((s) => s.id === studentId);
+  const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : [];
+  const history = store.installments.filter((i) => i.studentId === studentId);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!studentId || !amountNumber) return;
+    store.addInstallment({ studentId, amountNumber, amountText, remaining, note });
+    setAmountNumber(""); setAmountText(""); setRemaining(""); setNote("");
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+
+  return (
+    <ScreenShell title="الأقساط" onBack={onBack}>
+      {!studentId ? (
+        <>
+          <div className="relative mb-4">
+            <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه التسلسلي"
+              className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {results.map((s) => (
+              <button key={s.id} onClick={() => setStudentId(s.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          {done && <SuccessNote>تم حفظ قسيمة الدفع.</SuccessNote>}
+          <div className="flex items-center justify-between p-3.5 rounded-2xl mb-5" style={{ background: ACCENT_SOFT }}>
+            <div>
+              <p className="text-sm font-medium" style={{ color: INK }}>{student.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{student.serial}</p>
+            </div>
+            <button onClick={() => setStudentId("")} className="text-xs" style={{ color: ACCENT }}>تغيير</button>
+          </div>
+
+          <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>المواد المسجل بها</p>
+          <div className="flex flex-wrap gap-2 mb-5">
+            {SUBJECTS.map((subj) => {
+              const enrolled = Boolean(student.enrollments[subj.id]);
+              return (
+                <span key={subj.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border" style={{ borderColor: enrolled ? ACCENT : BORDER, color: enrolled ? ACCENT : INK_MUTED, background: enrolled ? ACCENT_SOFT : "#fff" }}>
+                  {enrolled && <Check size={12} />}{subj.name}
+                </span>
+              );
+            })}
+          </div>
+
+          <form onSubmit={submit}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="المبلغ (رقم)"><TextInput type="number" value={amountNumber} onChange={(e) => setAmountNumber(e.target.value)} placeholder="50000" required /></Field>
+              <Field label="المبلغ (كتابة)"><TextInput value={amountText} onChange={(e) => setAmountText(e.target.value)} placeholder="خمسون ألف دينار" /></Field>
+            </div>
+            <Field label="المبلغ المتبقي"><TextInput value={remaining} onChange={(e) => setRemaining(e.target.value)} placeholder="مثال: 100000" /></Field>
+            <Field label="ملاحظات">
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختياري" rows={2}
+                className="w-full rounded-xl px-4 py-3 text-sm outline-none border resize-none" style={{ borderColor: BORDER, color: INK }} />
+            </Field>
+            <PrimaryButton type="submit">حفظ القسيمة</PrimaryButton>
+          </form>
+
+          {history.length > 0 && (
+            <>
+              <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>سجل القسائم</p>
+              <div className="flex flex-col gap-2.5">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: INK }}>{Number(h.amountNumber).toLocaleString("ar")} د.ع</p>
+                      <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{h.date} · متبقي {h.remaining || "—"}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </ScreenShell>
+  );
+}
+
+/* ============================== archive ============================== */
+function SubjectRecordView({ subject, records }) {
+  const [tab, setTab] = useState("grades");
+  return (
+    <>
+      <div className="flex p-1 rounded-xl mb-5" style={{ background: SURFACE }}>
+        {[{ id: "grades", label: "الدرجات" }, { id: "attendance", label: "الحضور" }].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="flex-1 text-xs py-2.5 rounded-lg font-medium transition-colors"
+            style={{ background: tab === t.id ? "#fff" : "transparent", color: tab === t.id ? INK : INK_MUTED, boxShadow: tab === t.id ? "0 1px 2px rgba(22,33,29,0.08)" : "none" }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "grades" ? (
+        <div className="flex flex-col gap-2.5">
+          {records.grades.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه درجات مسجلة بعد.</p>}
+          {records.grades.map((g, i) => (
+            <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{g.examName}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
+              </div>
+              <p className="text-sm" style={{ fontFamily: DISPLAY, fontWeight: 700, color: g.status === "غش" ? DANGER : ACCENT }}>
+                {g.status === "طبيعي" ? `${g.score || 0}/${g.fullScore}` : g.status}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {records.attendance.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه سجل حضور بعد.</p>}
+          {records.attendance.map((a, i) => (
+            <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm" style={{ color: INK }}>{a.date}</p>
+              <div className="flex items-center gap-1.5">
+                {a.present ? <><span className="text-xs" style={{ color: ACCENT }}>حاضر</span><CheckCircle2 size={16} style={{ color: ACCENT }} /></>
+                  : <><span className="text-xs" style={{ color: DANGER }}>غائب</span><XCircle size={16} style={{ color: DANGER }} /></>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+function studentSubjectRecords(store, student, subjectId) {
+  const grades = store.gradeRecords
+    .filter((r) => r.subjectId === subjectId && r.results[student.id])
+    .map((r) => ({ examName: r.examName, examType: r.examType, date: r.date, fullScore: r.fullScore, ...r.results[student.id] }));
+  const attendance = store.attendanceRecords
+    .filter((r) => r.subjectId === subjectId && r.allGroupStudentIds.includes(student.id))
+    .map((r) => ({ date: r.date, present: r.presentIds.includes(student.id) }));
+  return { grades, attendance };
+}
+/* ============================== backup ============================== */
+function BackupScreen({ store, onBack }) {
+  const handleDownloadJSON = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      teachers: store.teachers,
+      students: store.students,
+      gradeRecords: store.gradeRecords,
+      attendanceRecords: store.attendanceRecords,
+      installments: store.installments,
+      notifications: store.notifications,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `masar-backup-${today()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadInstallmentsCSV = () => {
+    const header = ["الرقم التسلسلي", "اسم الطالب", "المبلغ (رقم)", "المبلغ (كتابة)", "المبلغ المتبقي", "ملاحظات", "التاريخ"];
+    const rows = store.installments.map((i) => {
+      const student = store.students.find((s) => s.id === i.studentId);
+      return [
+        student?.serial || "",
+        student?.name || "",
+        i.amountNumber || "",
+        i.amountText || "",
+        i.remaining || "",
+        (i.note || "").replace(/[\r\n,]/g, " "),
+        i.date || "",
+      ];
+    });
+    const csv = "\uFEFF" + [header, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `masar-installments-${today()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const totalCollected = store.installments.reduce((sum, i) => sum + (Number(i.amountNumber) || 0), 0);
+
+  return (
+    <ScreenShell title="نسخة احتياطية" onBack={onBack}>
+      <div className="rounded-2xl p-4 mb-6" style={{ background: ACCENT_SOFT }}>
+        <p className="text-xs" style={{ color: ACCENT }}>إجمالي المبالغ المسجلة بكل القسائم</p>
+        <p className="text-2xl mt-1" style={{ fontFamily: DISPLAY, fontWeight: 800, color: ACCENT }}>{totalCollected.toLocaleString("ar")} د.ع</p>
+        <p className="text-xs mt-1" style={{ color: INK_MUTED }}>من {store.installments.length} قسيمة دفع</p>
+      </div>
+
+      <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>سجل الأقساط (Excel)</p>
+      <p className="text-xs mb-3 leading-6" style={{ color: INK_MUTED }}>
+        ملف جدول يفتح مباشرة بـ Excel أو Google Sheets، فيه كل قسيمة دفع مسجلة: اسم الطالب، المبلغ، المتبقي، والتاريخ.
+      </p>
+      <button
+        onClick={handleDownloadInstallmentsCSV}
+        disabled={store.installments.length === 0}
+        className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white disabled:opacity-40 mb-8"
+        style={{ background: ACCENT, fontFamily: SANS }}
+      >
+        <FileDown size={16} /> تنزيل سجل الأقساط (Excel)
+      </button>
+
+      <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>نسخة كاملة (كل البيانات)</p>
+      <p className="text-xs mb-3 leading-6" style={{ color: INK_MUTED }}>
+        يحمّل ملف يحتوي كل بيانات المعهد (المدرسين، الطلاب، الدرجات، الحضور، الأقساط، الإشعارات) بصيغة JSON — احتفظ فيه بمكان آمن كنسخة احتياطية دورية.
+      </p>
+      <button
+        onClick={handleDownloadJSON}
+        className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold border"
+        style={{ borderColor: ACCENT, color: ACCENT, fontFamily: SANS }}
+      >
+        <Download size={16} /> تنزيل نسخة احتياطية كاملة
+      </button>
+
+      <div className="mt-8 rounded-2xl p-4 border" style={{ borderColor: BORDER }}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>ملخص البيانات الحالية</p>
+        <div className="grid grid-cols-2 gap-3">
+          <p className="text-xs" style={{ color: INK }}>{store.students.length} طالب</p>
+          <p className="text-xs" style={{ color: INK }}>{store.teachers.length} مدرس</p>
+          <p className="text-xs" style={{ color: INK }}>{store.gradeRecords.length} سجل درجات</p>
+          <p className="text-xs" style={{ color: INK }}>{store.attendanceRecords.length} سجل حضور</p>
+          <p className="text-xs" style={{ color: INK }}>{store.installments.length} قسيمة دفع</p>
+          <p className="text-xs" style={{ color: INK }}>{store.notifications.length} إشعار</p>
+        </div>
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== student report ============================== */
+function ReportScreen({ store, student, onBack }) {
+  const enrolledSubjects = Object.keys(student.enrollments).map(getSubject);
+  const [subjectId, setSubjectId] = useState(enrolledSubjects[0]?.id || "");
+  const [month, setMonth] = useState(() => today().slice(0, 7));
+  const [generated, setGenerated] = useState(false);
+
+  if (!generated) {
+    return (
+      <ScreenShell title="تصدير تقرير" onBack={onBack}>
+        {enrolledSubjects.length === 0 ? (
+          <p className="text-xs" style={{ color: INK_MUTED }}>الطالب غير مسجل بأي مادة بعد.</p>
+        ) : (
+          <>
+            <Field label="المادة">
+              <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+                {enrolledSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="الشهر">
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
+                className="w-full rounded-xl px-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK, fontFamily: SANS }} />
+            </Field>
+            <PrimaryButton disabled={!subjectId} onClick={() => setGenerated(true)}>إنشاء التقرير</PrimaryButton>
+          </>
+        )}
+      </ScreenShell>
+    );
+  }
+
+  const subj = getSubject(subjectId);
+  const enrollment = student.enrollments[subjectId];
+  const teacher = store.teachers.find((t) => t.id === enrollment.teacherId);
+
+  const grades = store.gradeRecords.filter((r) => r.subjectId === subjectId && r.results[student.id] && (r.date || "").startsWith(month));
+  const attendance = store.attendanceRecords.filter((r) => r.subjectId === subjectId && r.allGroupStudentIds.includes(student.id) && (r.date || "").startsWith(month));
+  const presentCount = attendance.filter((r) => r.presentIds.includes(student.id)).length;
+  const absentCount = attendance.length - presentCount;
+
+  const shareText = `تقرير أداء ${student.name} — ${subj.name} — ${month}\nمعهد العلوم · نظام مسار`;
+  const handleShare = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: "تقرير أداء الطالب", text: shareText }); } catch (e) {}
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+    }
+  };
+
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #report-print, #report-print * { visibility: visible; }
+          #report-print { position: fixed; inset: 0; margin: auto; }
+        }
+      `}</style>
+      <button onClick={() => setGenerated(false)} className="text-sm mb-6" style={{ color: ACCENT }}>→ رجوع</button>
+
+      <div id="report-print" className="mx-auto rounded-2xl overflow-hidden border" style={{ maxWidth: 420, borderColor: BORDER }}>
+        <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
+          <LogoBadge size={36} />
+          <div>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>تقرير أداء الطالب · نظام مسار</p>
+          </div>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-5 pb-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <div>
+              <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{student.name}</p>
+              <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{student.serial} · {subj.name} · {teacher?.name}</p>
+            </div>
+            <p style={{ fontSize: 11, color: INK_MUTED }}>{month}</p>
+          </div>
+
+          <p style={{ fontSize: 12, fontWeight: 700, color: INK, marginBottom: 10 }}>الدرجات</p>
+          {grades.length === 0 && <p style={{ fontSize: 11, color: INK_MUTED, marginBottom: 16 }}>ما فيه درجات مسجلة هذا الشهر.</p>}
+          <div className="flex flex-col gap-2 mb-6">
+            {grades.map((g, i) => {
+              const r = g.results[student.id];
+              return (
+                <div key={i} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
+                  <div>
+                    <p style={{ fontSize: 12, color: INK }}>{g.examName}</p>
+                    <p style={{ fontSize: 10, color: INK_MUTED }}>{g.examType} · {g.date}</p>
+                  </div>
+                  <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 13, color: r.status === "غش" ? DANGER : ACCENT }}>
+                    {r.status === "طبيعي" ? `${r.score || 0}/${g.fullScore}` : r.status}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          <p style={{ fontSize: 12, fontWeight: 700, color: INK, marginBottom: 10 }}>الحضور</p>
+          {attendance.length === 0 ? (
+            <p style={{ fontSize: 11, color: INK_MUTED }}>ما فيه سجل حضور هذا الشهر.</p>
+          ) : (
+            <div className="flex gap-3">
+              <div className="flex-1 rounded-lg p-3 text-center" style={{ background: ACCENT_SOFT }}>
+                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 18, color: ACCENT }}>{presentCount}</p>
+                <p style={{ fontSize: 10, color: INK_MUTED }}>يوم حضور</p>
+              </div>
+              <div className="flex-1 rounded-lg p-3 text-center" style={{ background: "#FBEAE8" }}>
+                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 18, color: DANGER }}>{absentCount}</p>
+                <p style={{ fontSize: 10, color: INK_MUTED }}>يوم غياب</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
+          <p style={{ fontSize: 9, color: INK_MUTED }}>تقرير صادر آلياً من نظام مسار</p>
+        </div>
+      </div>
+
+      <div className="max-w-[420px] mx-auto mt-6 flex flex-col gap-2.5">
+        <button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: ACCENT, fontFamily: SANS }}>
+          <Printer size={16} /> طباعة / حفظ كـ PDF
+        </button>
+        <button onClick={handleShare} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: "#25D366", fontFamily: SANS }}>
+          <MessageCircle size={16} /> مشاركة عبر واتساب
+        </button>
+        <p className="text-xs text-center leading-6" style={{ color: INK_MUTED }}>
+          احفظ التقرير كـ PDF أولاً من الزر الأول، وبعدها اضغط «مشاركة عبر واتساب» وأرفق الملف المحفوظ من قائمة المشاركة.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EnrollmentEditor({ store, student, subj }) {
+  const enrollment = student.enrollments[subj.id];
+  const teachersForSubject = store.teachers.filter((t) => t.subjectId === subj.id);
+  const currentTeacher = teachersForSubject.find((t) => t.id === enrollment?.teacherId);
+  const Icon = subj.icon;
+
+  const handleTeacherChange = (teacherId) => {
+    if (!teacherId) { store.updateEnrollment(student.id, subj.id, null, null); return; }
+    const t = teachersForSubject.find((tt) => tt.id === teacherId);
+    store.updateEnrollment(student.id, subj.id, teacherId, t.groups[0]?.id || "");
+  };
+  const handleGroupChange = (groupId) => {
+    store.updateEnrollment(student.id, subj.id, currentTeacher.id, groupId);
+  };
+
+  return (
+    <div className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+      <div className="flex items-center gap-2.5 mb-2.5">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }}>
+          <Icon size={16} style={{ color: ACCENT }} />
+        </div>
+        <p className="text-sm font-medium" style={{ color: INK }}>{subj.name}</p>
+      </div>
+      <Select value={enrollment?.teacherId || ""} onChange={(e) => handleTeacherChange(e.target.value)} className="mb-2">
+        <option value="">— غير مسجل —</option>
+        {teachersForSubject.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </Select>
+      {currentTeacher && (
+        <Select value={enrollment?.groupId || ""} onChange={(e) => handleGroupChange(e.target.value)}>
+          {currentTeacher.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </Select>
+      )}
+    </div>
+  );
+}
+
+function ArchiveScreen({ store, onBack }) {
+  const [query, setQuery] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [subjectId, setSubjectId] = useState(null);
+  const [showCard, setShowCard] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : store.students;
+  const student = store.students.find((s) => s.id === studentId);
+
+  if (student && showCard) {
+    return <IDCardPrintScreen student={student} onBack={() => setShowCard(false)} />;
+  }
+
+  if (student && showReport) {
+    return <ReportScreen store={store} student={student} onBack={() => setShowReport(false)} />;
+  }
+
+  if (student && subjectId) {
+    const subj = getSubject(subjectId);
+    return (
+      <ScreenShell title={subj.name} onBack={() => setSubjectId(null)}>
+        <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} />
+      </ScreenShell>
+    );
+  }
+
+  if (student) {
+    return (
+      <ScreenShell title="ملف الطالب" onBack={() => { setStudentId(""); setConfirmDelete(false); }}>
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
+          </div>
+          <div>
+            <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
+            <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>الرقم التسلسلي: {student.serial}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم الطالب</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.phone || "—"}</p>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم ولي الأمر</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.parentPhone || "—"}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setShowCard(true)}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white"
+            style={{ background: ACCENT, fontFamily: SANS }}
+          >
+            <Printer size={14} /> طباعة الهوية
+          </button>
+          <button
+            onClick={() => setShowReport(true)}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold border"
+            style={{ borderColor: ACCENT, color: ACCENT, fontFamily: SANS }}
+          >
+            <FileDown size={14} /> تصدير تقرير
+          </button>
+        </div>
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المواد والمدرسون ({Object.keys(student.enrollments).length})</p>
+        <p className="text-xs mb-3" style={{ color: INK_MUTED }}>غيّر المدرس أو المجموعة مباشرة من هنا — التغيير ينحفظ فوراً.</p>
+        <div className="flex flex-col gap-2.5 mb-3">
+          {SUBJECTS.map((subj) => <EnrollmentEditor key={subj.id} store={store} student={student} subj={subj} />)}
+        </div>
+
+        <p className="text-xs font-semibold mb-3 mt-2" style={{ color: INK_MUTED }}>سجل الدرجات والحضور</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {SUBJECTS.filter((subj) => student.enrollments[subj.id]).map((subj) => (
+            <button key={subj.id} onClick={() => setSubjectId(subj.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <span className="text-sm" style={{ color: INK }}>{subj.name}</span>
+              <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+            </button>
+          ))}
+          {Object.keys(student.enrollments).length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>الطالب غير مسجل بأي مادة بعد.</p>}
+        </div>
+
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold border"
+            style={{ borderColor: DANGER, color: DANGER, fontFamily: SANS }}
+          >
+            <Trash2 size={15} /> حذف الطالب
+          </button>
+        ) : (
+          <div className="rounded-xl border p-3.5" style={{ borderColor: DANGER, background: "#FBEAE8" }}>
+            <p className="text-xs mb-3" style={{ color: DANGER, fontFamily: SANS }}>هذا الإجراء يحذف الطالب نهائياً ولا يمكن التراجع عنه. متأكد؟</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-lg py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+              <button
+                onClick={() => { store.deleteStudent(student.id); setStudentId(""); setConfirmDelete(false); }}
+                className="flex-1 rounded-lg py-2.5 text-xs font-semibold text-white"
+                style={{ background: DANGER }}
+              >
+                تأكيد الحذف
+              </button>
+            </div>
+          </div>
+        )}
+      </ScreenShell>
+    );
+  }
+
+  return (
+    <ScreenShell title="أرشيف الطلاب" onBack={onBack}>
+      <div className="relative mb-5">
+        <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث بالاسم أو الرقم التسلسلي"
+          className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {results.map((s) => (
+          <button key={s.id} onClick={() => setStudentId(s.id)} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE }}>
+              {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT }}>{s.name[0]}</span>}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+            </div>
+            <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+          </button>
+        ))}
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== notifications ============================== */
+function NotificationsScreen({ store, onBack }) {
+  const [text, setText] = useState("");
+  const [targetType, setTargetType] = useState("all");
+  const [teacherId, setTeacherId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [done, setDone] = useState(false);
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+  const selectedStudent = store.students.find((s) => s.id === studentId);
+  const studentResults = studentQuery ? store.students.filter((s) => s.name.includes(studentQuery) || s.serial.includes(studentQuery)) : store.students;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    let target = { type: "all" };
+    if (targetType === "group" && teacherId && groupId) target = { type: "group", subjectId: teacher.subjectId, teacherId, groupId };
+    if (targetType === "student" && studentId) target = { type: "student", studentId };
+    store.addNotification({ text: text.trim(), target });
+    setText(""); setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+
+  return (
+    <ScreenShell title="الإشعارات" onBack={onBack}>
+      {done && <SuccessNote>تم إرسال الإشعار.</SuccessNote>}
+      <form onSubmit={submit}>
+        <Field label="نص الإشعار">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="اكتب نص التبليغ..."
+            className="w-full rounded-xl px-4 py-3 text-sm outline-none border resize-none" style={{ borderColor: BORDER, color: INK }} />
+        </Field>
+        <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>المستلمون</p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[{ id: "all", label: "الكل" }, { id: "group", label: "مجموعة معينة" }, { id: "student", label: "طالب معين" }].map((o) => (
+            <Chip key={o.id} active={targetType === o.id} onClick={() => { setTargetType(o.id); setStudentId(""); setStudentQuery(""); }} type="button">{o.label}</Chip>
+          ))}
+        </div>
+        {targetType === "group" && (
+          <>
+            <TeacherPicker teachers={store.teachers} value={teacherId} onChange={(id) => { setTeacherId(id); setGroupId(""); }} />
+            {teacher && <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />}
+          </>
+        )}
+        {targetType === "student" && (
+          <div className="mb-5">
+            {selectedStudent ? (
+              <div className="flex items-center justify-between p-3.5 rounded-2xl" style={{ background: ACCENT_SOFT }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: INK }}>{selectedStudent.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{selectedStudent.serial}</p>
+                </div>
+                <button type="button" onClick={() => setStudentId("")} className="text-xs" style={{ color: ACCENT }}>تغيير</button>
+              </div>
+            ) : (
+              <>
+                <div className="relative mb-3">
+                  <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+                  <input value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه التسلسلي"
+                    className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+                </div>
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                  {studentResults.map((s) => (
+                    <button key={s.id} type="button" onClick={() => setStudentId(s.id)} className="w-full flex items-center justify-between p-3 rounded-xl border text-right" style={{ borderColor: BORDER }}>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                        <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <PrimaryButton type="submit" className="flex items-center justify-center gap-2"><Send size={15} />إرسال الإشعار</PrimaryButton>
+      </form>
+
+      <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>الإشعارات المرسلة</p>
+      <div className="flex flex-col gap-2.5">
+        {[...store.notifications].reverse().map((n) => (
+          <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <p className="text-sm" style={{ color: INK }}>{n.text}</p>
+            <p className="text-xs mt-1.5" style={{ color: INK_MUTED }}>{n.date}</p>
+          </div>
+        ))}
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== admin dashboard root ============================== */
+/* ============================== early warning + whatsapp screens ============================== */
+function AtRiskScreen({ store, onBack }) {
+  const flags = getAtRiskStudents(store);
+  return (
+    <ScreenShell title="طلاب يحتاجون متابعة" onBack={onBack}>
+      {flags.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه طلاب متعثرين حالياً.</p>}
+      <div className="flex flex-col gap-3">
+        {flags.map((f, i) => {
+          const student = store.students.find((s) => s.id === f.studentId);
+          const subj = getSubject(f.subjectId);
+          const message = buildParentMessage(f.type, student.name, subj.name, f.score, f.fullScore);
+          return (
+            <div key={i} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#FBEAE8" }}>
+                  <AlertTriangle size={16} style={{ color: DANGER }} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: INK }}>{student.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{subj.name} · {f.detail}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => openWhatsapp(student.parentPhone, message)}
+                className="w-full flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg text-white"
+                style={{ background: "#25D366", fontFamily: SANS }}
+              >
+                <MessageCircle size={14} /> إرسال تحذير عبر واتساب
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+function NotifyParentScreen({ store, onBack }) {
+  const [query, setQuery] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [type, setType] = useState("absence");
+  const [subjectId, setSubjectId] = useState("");
+  const [score, setScore] = useState("");
+  const [fullScore, setFullScore] = useState("");
+
+  const student = store.students.find((s) => s.id === studentId);
+  const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : store.students;
+
+  if (!studentId) {
+    return (
+      <ScreenShell title="تبليغ ولي الأمر" onBack={onBack}>
+        <div className="relative mb-5">
+          <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه التسلسلي"
+            className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {results.map((s) => (
+            <button key={s.id} onClick={() => setStudentId(s.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  const enrolledSubjects = Object.keys(student.enrollments).map(getSubject);
+  const subj = subjectId ? getSubject(subjectId) : null;
+  const canSend = subj && (type === "absence" || (type === "decline" && score !== ""));
+  const message = canSend ? buildParentMessage(type, student.name, subj.name, score, fullScore) : "";
+
+  return (
+    <ScreenShell title="تبليغ ولي الأمر" onBack={() => setStudentId("")}>
+      <div className="flex items-center justify-between p-3.5 rounded-2xl mb-5" style={{ background: ACCENT_SOFT }}>
+        <div>
+          <p className="text-sm font-medium" style={{ color: INK }}>{student.name}</p>
+          <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{student.serial}</p>
+        </div>
+        <button onClick={() => setStudentId("")} className="text-xs" style={{ color: ACCENT }}>تغيير</button>
+      </div>
+
+      <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>نوع التبليغ</p>
+      <div className="flex flex-wrap gap-2 mb-5">
+        <Chip active={type === "absence"} onClick={() => setType("absence")}>تبليغ غياب</Chip>
+        <Chip active={type === "decline"} onClick={() => setType("decline")}>تبليغ تراجع مستوى</Chip>
+      </div>
+
+      <Field label="المادة">
+        <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+          <option value="">اختر المادة</option>
+          {enrolledSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </Select>
+      </Field>
+
+      {type === "decline" && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="الدرجة"><TextInput type="number" value={score} onChange={(e) => setScore(e.target.value)} placeholder="مثال: 12" /></Field>
+          <Field label="الدرجة الكاملة"><TextInput type="number" value={fullScore} onChange={(e) => setFullScore(e.target.value)} placeholder="مثال: 30" /></Field>
+        </div>
+      )}
+
+      {canSend && (
+        <>
+          <div className="p-3.5 rounded-2xl border mb-5 text-xs leading-6 whitespace-pre-line" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            {message}
+          </div>
+          <button
+            onClick={() => openWhatsapp(student.parentPhone, message)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
+            style={{ background: "#25D366", fontFamily: SANS }}
+          >
+            <MessageCircle size={15} /> فتح واتساب
+          </button>
+        </>
+      )}
+    </ScreenShell>
+  );
+}
+
+function AdminDashboard({ store, onLogout }) {
+  const [modalItem, setModalItem] = useState(null);
+  const [unlockedIds, setUnlockedIds] = useState([]);
+  const [openItemId, setOpenItemId] = useState(null);
+  const institute = { name: "معهد العلوم" };
+
+  const handleItemClick = (item) => {
+    if (item.code && !unlockedIds.includes(item.id)) setModalItem(item);
+    else setOpenItemId(item.id);
+  };
+  const handleCodeSuccess = () => { setUnlockedIds((ids) => [...ids, modalItem.id]); setOpenItemId(modalItem.id); setModalItem(null); };
+  const back = () => setOpenItemId(null);
+
+  const screens = {
+    "add-teacher": <AddTeacherScreen store={store} onBack={back} />,
+    "add-group": <AddGroupScreen store={store} onBack={back} />,
+    "add-student": <AddStudentScreen store={store} onBack={back} />,
+    attendance: <AttendanceScreen store={store} onBack={back} />,
+    grades: <GradesScreen store={store} onBack={back} />,
+    installments: <InstallmentsScreen store={store} onBack={back} />,
+    archive: <ArchiveScreen store={store} onBack={back} />,
+    notifications: <NotificationsScreen store={store} onBack={back} />,
+    "notify-parent": <NotifyParentScreen store={store} onBack={back} />,
+    "at-risk": <AtRiskScreen store={store} onBack={back} />,
+    backup: <BackupScreen store={store} onBack={back} />,
+  };
+  if (openItemId) return screens[openItemId];
+
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF" }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <LogoBadge size={46} />
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{institute.name}</p>
+              <p className="text-xs" style={{ color: INK_MUTED }}>لوحة تحكم مسار</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <div className="flex gap-3">
+          <StatCard icon={Users} value={store.students.length} label="طالب مسجل" />
+          <StatCard icon={GraduationCap} value={store.teachers.length} label="مدرس" />
+          <StatCard icon={Layers} value={store.teachers.reduce((n, t) => n + t.groups.length, 0)} label="مجموعة" />
+        </div>
+      </header>
+      <main className="px-5" style={{ fontFamily: SANS }}>
+        {(() => {
+          const atRisk = getAtRiskStudents(store);
+          const uniqueCount = new Set(atRisk.map((f) => f.studentId)).size;
+          if (uniqueCount === 0) return null;
+          return (
+            <button
+              onClick={() => setOpenItemId("at-risk")}
+              className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl mb-6 text-right"
+              style={{ background: "#FBEAE8", border: `1px solid ${DANGER}` }}
+            >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+                <AlertTriangle size={19} style={{ color: DANGER }} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold" style={{ color: DANGER }}>{uniqueCount} طالب يحتاج متابعة</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>غياب متكرر أو تراجع بالدرجات</p>
+              </div>
+              <ChevronLeft size={16} style={{ color: DANGER }} />
+            </button>
+          );
+        })()}
+        <div className="mb-2">
+          <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المهام اليومية</p>
+          <div className="flex flex-col gap-2.5">{DAILY_ITEMS.map((item) => <ItemRow key={item.id} item={item} locked={false} onClick={() => handleItemClick(item)} />)}</div>
+        </div>
+        <div className="my-6"><PathDivider /></div>
+        <div>
+          <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الإدارة</p>
+          <div className="flex flex-col gap-2.5">{MANAGEMENT_ITEMS.map((item) => <ItemRow key={item.id} item={item} locked={!unlockedIds.includes(item.id)} onClick={() => handleItemClick(item)} />)}</div>
+        </div>
+      </main>
+      {modalItem && <CodeModal item={modalItem} onClose={() => setModalItem(null)} onSuccess={handleCodeSuccess} />}
+    </div>
+  );
+}
+
+/* ============================== student view ============================== */
+function StudentSubjectDetail({ store, student, subjectId, onBack }) {
+  const subj = getSubject(subjectId);
+  const enrollment = student.enrollments[subjectId];
+  const teacher = store.teachers.find((t) => t.id === enrollment.teacherId);
+  const group = teacher.groups.find((g) => g.id === enrollment.groupId);
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-6" style={{ color: ACCENT }}><ChevronLeft size={16} />موادي</button>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: ACCENT_SOFT }}><subj.icon size={21} style={{ color: ACCENT }} /></div>
+        <div>
+          <h2 className="text-lg" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{subj.name}</h2>
+          <p className="text-xs" style={{ color: INK_MUTED }}>{teacher.name} · {group.name}</p>
+        </div>
+      </div>
+      <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} />
+    </div>
+  );
+}
+function StudentDashboard({ store, studentId, onLogout }) {
+  const [openSubject, setOpenSubject] = useState(null);
+  const student = store.students.find((s) => s.id === studentId) || store.students[0];
+
+  if (!student) {
+    return (
+      <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center px-5 text-center" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+        <p className="text-sm" style={{ color: INK_MUTED }}>ما فيه طلاب مسجلين بعد. سجل دخول كإدارة وأضف طالب أول.</p>
+        <button onClick={onLogout} className="mt-4 text-sm" style={{ color: ACCENT }}>رجوع</button>
+      </div>
+    );
+  }
+  if (openSubject) return <StudentSubjectDetail store={store} student={student} subjectId={openSubject} onBack={() => setOpenSubject(null)} />;
+
+  const myNotifications = store.notifications.filter((n) => {
+    if (n.target.type === "all") return true;
+    if (n.target.type === "student") return n.target.studentId === student.id;
+    if (n.target.type === "group") return student.enrollments[n.target.subjectId]?.teacherId === n.target.teacherId && student.enrollments[n.target.subjectId]?.groupId === n.target.groupId;
+    return false;
+  });
+
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF" }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+              {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
+            </div>
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED, fontFamily: SANS }}>{student.serial}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <div style={{ fontFamily: SANS }}><PathDivider /></div>
+      </header>
+      <main className="px-5" style={{ fontFamily: SANS }}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>موادي</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {SUBJECTS.map((s) => {
+            const enrollment = student.enrollments[s.id];
+            const teacher = enrollment && store.teachers.find((t) => t.id === enrollment.teacherId);
+            const group = teacher?.groups.find((g) => g.id === enrollment?.groupId);
+            const Icon = s.icon;
+            return (
+              <button key={s.id} disabled={!enrollment} onClick={() => setOpenSubject(s.id)} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right disabled:opacity-45" style={{ borderColor: BORDER }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }}><Icon size={19} style={{ color: ACCENT }} /></div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{enrollment ? `${teacher.name} · ${group?.name}` : "غير مسجل"}</p>
+                </div>
+                {enrollment && <ChevronLeft size={16} style={{ color: INK_MUTED }} />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الإشعارات</p>
+        <div className="flex flex-col gap-2.5">
+          {myNotifications.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه إشعارات حالياً.</p>}
+          {[...myNotifications].reverse().map((n) => (
+            <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm" style={{ color: INK }}>{n.text}</p>
+              <p className="text-xs mt-1.5" style={{ color: INK_MUTED }}>{n.date}</p>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ============================== root (Supabase-backed) ============================== */
+export default function MasarApp() {
+  const [session, setSession] = useState(null);
+  const [loggedInStudentId, setLoggedInStudentId] = useState(null);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = async () => {
+    try {
+      const fresh = await fetchAll();
+      setData(fresh);
+      setError(null);
+    } catch (e) {
+      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  const withReload = (fn) => async (...args) => {
+    setBusy(true);
+    try {
+      const result = await fn(...args);
+      await reload();
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+        <style>{FONT_IMPORT}</style>
+        <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-2" style={{ background: "#FFFFFF" }}>
+        <style>{FONT_IMPORT}</style>
+        <p className="text-sm font-semibold" style={{ color: DANGER, fontFamily: SANS }}>تعذر الاتصال بقاعدة البيانات</p>
+        <p className="text-xs" style={{ color: INK_MUTED, fontFamily: SANS }}>{error}</p>
+      </div>
+    );
+  }
+
+  const store = {
+    ...data,
+    addTeacher: withReload(dbAddTeacher),
+    addGroup: withReload((teacherId) => {
+      const teacher = data.teachers.find((t) => t.id === teacherId);
+      const nextName = `M${teacher.groups.length + 1}`;
+      return dbAddGroup(teacherId, nextName);
+    }),
+    addStudent: (studentData) => {
+      const nextNumber = data.students.length + 1;
+      const serial = String(nextNumber).padStart(4, "0");
+      withReload(() => dbAddStudent(studentData, serial))();
+      return serial;
+    },
+    updateEnrollment: withReload(dbUpdateEnrollment),
+    deleteStudent: withReload(dbDeleteStudent),
+    addAttendanceRecord: withReload(dbAddAttendanceRecord),
+    addGradeRecord: withReload(dbAddGradeRecord),
+    addInstallment: withReload(dbAddInstallment),
+    addNotification: withReload(dbAddNotification),
+  };
+
+  return (
+    <>
+      <style>{FONT_IMPORT}</style>
+      {busy && (
+        <div className="fixed top-3 inset-x-0 flex justify-center z-50 pointer-events-none">
+          <div className="px-3 py-1.5 rounded-full text-xs text-white" style={{ background: ACCENT, fontFamily: SANS }}>جارِ الحفظ…</div>
+        </div>
+      )}
+      {session === "admin" && <AdminDashboard store={store} onLogout={() => setSession(null)} />}
+      {session === "student" && <StudentDashboard store={store} studentId={loggedInStudentId} onLogout={() => { setSession(null); setLoggedInStudentId(null); }} />}
+      {!session && <LoginScreen students={data.students} onLogin={(role, studentId) => { setSession(role); setLoggedInStudentId(studentId || null); }} />}
+    </>
+  );
+}

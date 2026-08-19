@@ -746,7 +746,7 @@ function getAtRiskStudents(store) {
 
 function buildParentMessage(type, studentName, subjectName, score, fullScore) {
   if (type === "absence") {
-    return `السلام عليكم أستاذي
+    return `السلام عليكم أستاذ
 
 نود إعلامكم من إدارة معهد العلوم التعليمي بأن الطالب ${studentName} لم يحضر اليوم إلى محاضرة ${subjectName}.
 

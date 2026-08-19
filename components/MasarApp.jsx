@@ -1,7 +1,7 @@
 "use client";
 /**
  * مسار (Masar) — نظام إدارة المعاهد
- * جميع الحقوق محفوظة لـ علي تقي © 2026
+ * جميع الحقوق محفوظة لـ المهندس علي تقي © 2026
  * يُمنع نسخ أو إعادة توزيع هذا الكود دون إذن مسبق من المالك.
  */
 import React, { useState, useEffect } from "react";
@@ -13,10 +13,16 @@ import {
   addAttendanceRecord as dbAddAttendanceRecord,
   addGradeRecord as dbAddGradeRecord,
   addInstallment as dbAddInstallment,
+  deleteInstallment as dbDeleteInstallment,
   addNotification as dbAddNotification,
   updateEnrollment as dbUpdateEnrollment,
+  updateStudentInfo as dbUpdateStudentInfo,
+  updateGradeResult as dbUpdateGradeResult,
+  updateAttendanceEntry as dbUpdateAttendanceEntry,
   deleteStudent as dbDeleteStudent,
 } from "../lib/data";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { QRCodeSVG } from "qrcode.react";
 import {
   ClipboardCheck,
   ClipboardList,
@@ -52,6 +58,7 @@ import {
   Trash2,
   Download,
   FileDown,
+  Pencil,
   Check,
   Zap,
   ZapOff,
@@ -497,65 +504,7 @@ function AddGroupScreen({ store, onBack }) {
 }
 
 /* ============================== add student ============================== */
-/* ============================== barcode + student ID card ============================== */
-const CODE39_PATTERNS = {
-  "0": "NNNWWNWNN", "1": "WNNWNNNNW", "2": "NNWWNNNNW", "3": "WNWWNNNNN", "4": "NNNWWNNNW",
-  "5": "WNNWWNNNN", "6": "NNWWWNNNN", "7": "NNNWNNWNW", "8": "WNNWNNWNN", "9": "NNWWNNWNN",
-  "*": "NNNWNWNWN",
-};
-function buildCode39Bars(value) {
-  const full = `*${value}*`;
-  const bars = [];
-  for (let c = 0; c < full.length; c++) {
-    const pattern = CODE39_PATTERNS[full[c]];
-    if (!pattern) continue;
-    for (let i = 0; i < pattern.length; i++) {
-      bars.push({ isBar: i % 2 === 0, wide: pattern[i] === "W" });
-    }
-    if (c < full.length - 1) bars.push({ isBar: false, wide: false });
-  }
-  return bars;
-}
-function Barcode({ value, height = 56, unit = 2.2 }) {
-  const bars = buildCode39Bars(value);
-  let x = 0;
-  const rects = [];
-  bars.forEach((b, i) => {
-    const w = (b.wide ? 3 : 1) * unit;
-    if (b.isBar) rects.push(<rect key={i} x={x} y={0} width={w} height={height} fill={INK} />);
-    x += w;
-  });
-  return (
-    <svg width={x} height={height} viewBox={`0 0 ${x} ${height}`} style={{ display: "block" }}>
-      {rects}
-    </svg>
-  );
-}
-
-function FieldTag({ label, value, bold }) {
-  return (
-    <div>
-      <span
-        className="inline-block px-2 py-0.5 rounded text-white mb-1"
-        style={{ background: ACCENT, fontSize: 9, fontFamily: SANS }}
-      >
-        {label}
-      </span>
-      <p
-        style={{
-          fontFamily: bold ? DISPLAY : SANS,
-          fontWeight: bold ? 700 : 500,
-          fontSize: bold ? 13 : 12,
-          color: INK,
-          borderBottom: `1px solid ${BORDER}`,
-          paddingBottom: 3,
-        }}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
+/* ============================== student ID card ============================== */
 
 function IDCardPrintScreen({ student, onBack }) {
   return (
@@ -572,81 +521,61 @@ function IDCardPrintScreen({ student, onBack }) {
 
       <div
         id="id-card-print"
-        className="relative mx-auto rounded-2xl overflow-hidden"
-        style={{ maxWidth: 380, border: "3px solid #C9A227", boxShadow: "0 12px 28px rgba(22,33,29,0.18)" }}
+        className="relative mx-auto rounded-3xl overflow-hidden flex flex-col"
+        style={{ width: 280, background: "#fff", boxShadow: "0 16px 32px rgba(22,33,29,0.2)", border: `1px solid ${BORDER}` }}
       >
-        {/* watermark */}
-        <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none"
-          style={{ transform: "rotate(-14deg) scale(2.4)", opacity: 0.05 }}
-        >
-          <MasarMark size={220} on="light" />
-        </div>
+        {/* lanyard punch */}
+        <div className="absolute left-1/2 top-3 -translate-x-1/2 z-10" style={{ width: 34, height: 8, borderRadius: 999, background: "rgba(255,255,255,0.55)" }} />
 
-        {/* header */}
-        <div
-          className="relative flex items-center gap-3 px-4 py-3.5"
-          style={{ background: `linear-gradient(135deg, ${ACCENT} 0%, #123a33 100%)` }}
-        >
-          <LogoBadge size={36} />
-          <div className="flex-1">
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 16 }}>معهد العلوم</p>
-            <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 9, letterSpacing: 0.5 }}>AL-OLOOM INSTITUTE · STUDENT ID</p>
-          </div>
-          <div className="text-left">
-            <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 9 }}>صالحة لعام</p>
-            <p style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>2026 - 2027</p>
-          </div>
-        </div>
-        <div style={{ height: 3, background: "linear-gradient(90deg, #C9A227, #E8CE6E, #C9A227)" }} />
-
-        {/* body */}
-        <div className="relative flex gap-3 p-4" style={{ background: "#fff" }}>
+        {/* header band */}
+        <div className="relative pt-8 pb-14 flex flex-col items-center" style={{ background: `linear-gradient(160deg, ${ACCENT} 0%, #123a33 100%)` }}>
           <div
-            className="rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center"
-            style={{ width: 80, height: 98, border: `2.5px solid ${ACCENT}`, background: SURFACE, boxShadow: "0 2px 6px rgba(22,33,29,0.15)" }}
+            className="absolute inset-0 opacity-[0.07]"
+            style={{ backgroundImage: `radial-gradient(#fff 1px, transparent 1px)`, backgroundSize: "10px 10px" }}
+          />
+          <MasarMark size={26} on="dark" />
+          <p className="mt-2 relative" style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+          <p className="relative" style={{ color: "rgba(255,255,255,0.7)", fontSize: 9, letterSpacing: 0.5 }}>STUDENT ID · 2026 - 2027</p>
+        </div>
+
+        {/* photo — overlapping header/body */}
+        <div className="flex justify-center -mt-12">
+          <div
+            className="rounded-full overflow-hidden flex items-center justify-center"
+            style={{ width: 88, height: 88, border: "4px solid #fff", background: SURFACE, boxShadow: "0 6px 14px rgba(22,33,29,0.25)" }}
           >
             {student.photo ? (
               <img src={student.photo} alt="" className="w-full h-full object-cover" />
             ) : (
-              <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 24 }}>{student.name[0]}</span>
+              <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 28 }}>{student.name[0]}</span>
             )}
-          </div>
-
-          <div className="flex-1 flex flex-col gap-2.5 justify-center">
-            <FieldTag label="الاسم" value={student.name} bold />
-            <FieldTag label="الرقم التسلسلي" value={student.serial} />
-            <FieldTag label="الصف" value="السادس الإعدادي" />
-          </div>
-
-          <div
-            className="flex flex-col items-center justify-center gap-1.5 rounded-xl p-2 flex-shrink-0"
-            style={{ background: SURFACE, border: `1px solid ${BORDER}`, minWidth: 92 }}
-          >
-            <p style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>امسح للحضور</p>
-            <Barcode value={student.serial} height={40} unit={1.5} />
-            <p style={{ fontSize: 9, color: INK_MUTED, letterSpacing: 1 }}>{student.serial}</p>
           </div>
         </div>
 
-        {/* seal */}
-        <div
-          className="absolute flex flex-col items-center justify-center rounded-full"
-          style={{
-            width: 46, height: 46, left: 10, bottom: 34,
-            background: "rgba(31,75,67,0.06)", border: `1.5px dashed ${ACCENT}`,
-          }}
-        >
-          <MasarMark size={20} on="light" />
+        {/* identity */}
+        <div className="flex flex-col items-center px-5 pt-3 pb-4">
+          <p className="text-center" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{student.name}</p>
+          <p className="mt-1" style={{ color: INK_MUTED, fontSize: 11 }}>السادس الإعدادي</p>
+          <div className="mt-2 px-3 py-1 rounded-full" style={{ background: ACCENT_SOFT }}>
+            <p style={{ color: ACCENT, fontSize: 11, fontWeight: 700, letterSpacing: 1 }}>{student.serial}</p>
+          </div>
+        </div>
+
+        {/* QR */}
+        <div className="flex flex-col items-center pb-5">
+          <div className="rounded-2xl p-2.5" style={{ background: "#fff", border: `1px solid ${BORDER}` }}>
+            <QRCodeSVG value={student.serial} size={92} fgColor={INK} bgColor="#ffffff" />
+          </div>
+          <p className="mt-2" style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>امسح لتسجيل الحضور</p>
         </div>
 
         {/* footer */}
-        <div className="relative px-4 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
+        <div className="px-5 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
           <p style={{ fontSize: 9, color: INK_MUTED, fontFamily: SANS }}>هذه الهوية صالحة للاستخدام داخل معهد العلوم فقط</p>
         </div>
       </div>
 
-      <div className="max-w-[380px] mx-auto mt-6 no-print">
+      <div className="max-w-[280px] mx-auto mt-6 no-print">
         <button
           onClick={() => window.print()}
           className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
@@ -861,12 +790,42 @@ function studentsInGroup(students, subjectId, teacherId, groupId) {
 function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
+  const scanControlsRef = React.useRef(null);
+  const scanLockRef = React.useRef(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [flashOn, setFlashOn] = useState(false);
   const [flashSupported, setFlashSupported] = useState(false);
   const [manualCode, setManualCode] = useState("");
   const [feedback, setFeedback] = useState(null); // { ok: bool, text: string }
+
+  const rosterRef = React.useRef(roster);
+  const presentIdsRef = React.useRef(presentIds);
+  rosterRef.current = roster;
+  presentIdsRef.current = presentIds;
+
+  const scanStudent = (student) => {
+    if (presentIdsRef.current.includes(student.id)) {
+      setFeedback({ ok: false, text: `${student.name} مسجل حاضر مسبقاً` });
+    } else {
+      onScan(student.id);
+      setFeedback({ ok: true, text: `تم تسجيل ${student.name} حاضراً` });
+    }
+    setManualCode("");
+    setTimeout(() => setFeedback(null), 2200);
+  };
+
+  const handleDetectedCode = (text) => {
+    if (scanLockRef.current) return;
+    const code = (text || "").trim();
+    if (!code) return;
+    const lower = code.toLowerCase();
+    const student = rosterRef.current.find((s) => s.serial.toLowerCase() === lower || s.serial.toLowerCase().endsWith(lower));
+    if (!student) return; // unrecognized code while scanning — ignore silently, no spam
+    scanLockRef.current = true;
+    scanStudent(student);
+    setTimeout(() => { scanLockRef.current = false; }, 1500);
+  };
 
   React.useEffect(() => {
     let active = true;
@@ -889,6 +848,16 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities ? track.getCapabilities() : {};
         setFlashSupported(Boolean(caps.torch));
+
+        try {
+          const reader = new BrowserMultiFormatReader();
+          const controls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
+            if (result) handleDetectedCode(result.getText());
+          });
+          scanControlsRef.current = controls;
+        } catch (readerErr) {
+          /* barcode auto-read unavailable on this browser — manual entry still works */
+        }
       } catch (e) {
         setCameraOn(false);
         setCameraError(e && (e.name || e.message) ? `${e.name || ""} ${e.message || ""}`.trim() : "خطأ غير معروف");
@@ -896,6 +865,7 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
     })();
     return () => {
       active = false;
+      scanControlsRef.current?.stop?.();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -909,17 +879,6 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
     } catch (e) {
       /* not supported on this device */
     }
-  };
-
-  const scanStudent = (student) => {
-    if (presentIds.includes(student.id)) {
-      setFeedback({ ok: false, text: `${student.name} مسجل حاضر مسبقاً` });
-    } else {
-      onScan(student.id);
-      setFeedback({ ok: true, text: `تم تسجيل ${student.name} حاضراً` });
-    }
-    setManualCode("");
-    setTimeout(() => setFeedback(null), 2200);
   };
 
   const submitCode = (e) => {
@@ -959,6 +918,12 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center pointer-events-none">
           <div style={{ width: "70%", height: 2, background: ACCENT, opacity: 0.85, boxShadow: `0 0 8px ${ACCENT}` }} />
         </div>
+        {cameraOn && (
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: "rgba(0,0,0,0.4)" }}>
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: ACCENT }} />
+            <span className="text-xs" style={{ color: "#fff", fontFamily: SANS }}>يبحث عن باركود…</span>
+          </div>
+        )}
         {flashSupported && (
           <button onClick={toggleFlash} className="absolute bottom-3 left-3 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)" }} aria-label="فلاش">
             {flashOn ? <Zap size={16} color="#fff" /> : <ZapOff size={16} color="#fff" />}
@@ -1191,7 +1156,9 @@ function InstallmentsScreen({ store, onBack }) {
   const [amountText, setAmountText] = useState("");
   const [remaining, setRemaining] = useState("");
   const [note, setNote] = useState("");
+  const [accountant, setAccountant] = useState("");
   const [done, setDone] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const student = store.students.find((s) => s.id === studentId);
   const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : [];
@@ -1200,7 +1167,7 @@ function InstallmentsScreen({ store, onBack }) {
   const submit = (e) => {
     e.preventDefault();
     if (!studentId || !amountNumber) return;
-    store.addInstallment({ studentId, amountNumber, amountText, remaining, note });
+    store.addInstallment({ studentId, amountNumber, amountText, remaining, note, accountant });
     setAmountNumber(""); setAmountText(""); setRemaining(""); setNote("");
     setDone(true);
     setTimeout(() => setDone(false), 2000);
@@ -1255,6 +1222,7 @@ function InstallmentsScreen({ store, onBack }) {
               <Field label="المبلغ (كتابة)"><TextInput value={amountText} onChange={(e) => setAmountText(e.target.value)} placeholder="خمسون ألف دينار" /></Field>
             </div>
             <Field label="المبلغ المتبقي"><TextInput value={remaining} onChange={(e) => setRemaining(e.target.value)} placeholder="مثال: 100000" /></Field>
+            <Field label="اسم المحاسب"><TextInput value={accountant} onChange={(e) => setAccountant(e.target.value)} placeholder="اسم من استلم الدفعة" /></Field>
             <Field label="ملاحظات">
               <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="اختياري" rows={2}
                 className="w-full rounded-xl px-4 py-3 text-sm outline-none border resize-none" style={{ borderColor: BORDER, color: INK }} />
@@ -1267,11 +1235,28 @@ function InstallmentsScreen({ store, onBack }) {
               <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>سجل القسائم</p>
               <div className="flex flex-col gap-2.5">
                 {history.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
-                    <div>
+                  <div key={h.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <p className="text-sm font-medium" style={{ color: INK }}>{Number(h.amountNumber).toLocaleString("ar")} د.ع</p>
-                      <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{h.date} · متبقي {h.remaining || "—"}</p>
+                      <button onClick={() => setConfirmDeleteId(confirmDeleteId === h.id ? null : h.id)} style={{ color: DANGER }} aria-label="حذف">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
+                    <p className="text-xs" style={{ color: INK_MUTED }}>{h.date} · متبقي {h.remaining || "—"}</p>
+                    {h.accountant && <p className="text-xs mt-1" style={{ color: INK_MUTED }}>المحاسب: {h.accountant}</p>}
+                    {h.note && <p className="text-xs mt-1" style={{ color: INK }}>{h.note}</p>}
+                    {confirmDeleteId === h.id && (
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => setConfirmDeleteId(null)} className="flex-1 rounded-lg py-2 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+                        <button
+                          onClick={() => { store.deleteInstallment(h.id); setConfirmDeleteId(null); }}
+                          className="flex-1 rounded-lg py-2 text-xs font-semibold text-white"
+                          style={{ background: DANGER }}
+                        >
+                          تأكيد الحذف
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1284,7 +1269,7 @@ function InstallmentsScreen({ store, onBack }) {
 }
 
 /* ============================== archive ============================== */
-function SubjectRecordView({ subject, records }) {
+function SubjectRecordView({ subject, records, editable, store, studentId }) {
   const [tab, setTab] = useState("grades");
   return (
     <>
@@ -1299,17 +1284,36 @@ function SubjectRecordView({ subject, records }) {
       {tab === "grades" ? (
         <div className="flex flex-col gap-2.5">
           {records.grades.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه درجات مسجلة بعد.</p>}
-          {records.grades.map((g, i) => (
-            <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
-              <div>
-                <p className="text-sm font-medium" style={{ color: INK }}>{g.examName}</p>
-                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
+          {records.grades.map((g, i) =>
+            editable ? (
+              <div key={i} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-sm font-medium" style={{ color: INK }}>{g.examName}</p>
+                  <p className="text-xs" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {["طبيعي", "غش", "مجاز"].map((st) => (
+                    <Chip key={st} active={g.status === st} onClick={() => store.updateGradeResult(g.recordId, studentId, { status: st, score: st === "طبيعي" ? g.score : "" })}>{st}</Chip>
+                  ))}
+                </div>
+                {g.status === "طبيعي" && (
+                  <input type="number" placeholder={`الدرجة من ${g.fullScore || "؟"}`} value={g.score || ""}
+                    onChange={(e) => store.updateGradeResult(g.recordId, studentId, { status: g.status, score: e.target.value })}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+                )}
               </div>
-              <p className="text-sm" style={{ fontFamily: DISPLAY, fontWeight: 700, color: g.status === "غش" ? DANGER : ACCENT }}>
-                {g.status === "طبيعي" ? `${g.score || 0}/${g.fullScore}` : g.status}
-              </p>
-            </div>
-          ))}
+            ) : (
+              <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: INK }}>{g.examName}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
+                </div>
+                <p className="text-sm" style={{ fontFamily: DISPLAY, fontWeight: 700, color: g.status === "غش" ? DANGER : ACCENT }}>
+                  {g.status === "طبيعي" ? `${g.score || 0}/${g.fullScore}` : g.status}
+                </p>
+              </div>
+            )
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
@@ -1317,10 +1321,20 @@ function SubjectRecordView({ subject, records }) {
           {records.attendance.map((a, i) => (
             <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
               <p className="text-sm" style={{ color: INK }}>{a.date}</p>
-              <div className="flex items-center gap-1.5">
-                {a.present ? <><span className="text-xs" style={{ color: ACCENT }}>حاضر</span><CheckCircle2 size={16} style={{ color: ACCENT }} /></>
-                  : <><span className="text-xs" style={{ color: DANGER }}>غائب</span><XCircle size={16} style={{ color: DANGER }} /></>}
-              </div>
+              {editable ? (
+                <button
+                  onClick={() => store.updateAttendanceEntry(a.recordId, studentId, !a.present)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg"
+                  style={{ background: a.present ? ACCENT_SOFT : "#FBEAE8", color: a.present ? ACCENT : DANGER }}
+                >
+                  {a.present ? <><CheckCircle2 size={14} /> حاضر</> : <><XCircle size={14} /> غائب</>}
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {a.present ? <><span className="text-xs" style={{ color: ACCENT }}>حاضر</span><CheckCircle2 size={16} style={{ color: ACCENT }} /></>
+                    : <><span className="text-xs" style={{ color: DANGER }}>غائب</span><XCircle size={16} style={{ color: DANGER }} /></>}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1331,10 +1345,10 @@ function SubjectRecordView({ subject, records }) {
 function studentSubjectRecords(store, student, subjectId) {
   const grades = store.gradeRecords
     .filter((r) => r.subjectId === subjectId && r.results[student.id])
-    .map((r) => ({ examName: r.examName, examType: r.examType, date: r.date, fullScore: r.fullScore, ...r.results[student.id] }));
+    .map((r) => ({ recordId: r.id, examName: r.examName, examType: r.examType, date: r.date, fullScore: r.fullScore, ...r.results[student.id] }));
   const attendance = store.attendanceRecords
     .filter((r) => r.subjectId === subjectId && r.allGroupStudentIds.includes(student.id))
-    .map((r) => ({ date: r.date, present: r.presentIds.includes(student.id) }));
+    .map((r) => ({ recordId: r.id, date: r.date, present: r.presentIds.includes(student.id) }));
   return { grades, attendance };
 }
 /* ============================== backup ============================== */
@@ -1361,7 +1375,7 @@ function BackupScreen({ store, onBack }) {
   };
 
   const handleDownloadInstallmentsCSV = () => {
-    const header = ["الرقم التسلسلي", "اسم الطالب", "المبلغ (رقم)", "المبلغ (كتابة)", "المبلغ المتبقي", "ملاحظات", "التاريخ"];
+    const header = ["الرقم التسلسلي", "اسم الطالب", "المبلغ (رقم)", "المبلغ (كتابة)", "المبلغ المتبقي", "اسم المحاسب", "ملاحظات", "التاريخ"];
     const rows = store.installments.map((i) => {
       const student = store.students.find((s) => s.id === i.studentId);
       return [
@@ -1370,6 +1384,7 @@ function BackupScreen({ store, onBack }) {
         i.amountNumber || "",
         i.amountText || "",
         i.remaining || "",
+        i.accountant || "",
         (i.note || "").replace(/[\r\n,]/g, " "),
         i.date || "",
       ];
@@ -1605,6 +1620,87 @@ function EnrollmentEditor({ store, student, subj }) {
   );
 }
 
+function StudentHeaderEditable({ store, student }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(student.name);
+  const [phone, setPhone] = useState(student.phone || "");
+  const [parentPhone, setParentPhone] = useState(student.parentPhone || "");
+  const [photo, setPhoto] = useState(student.photo);
+
+  React.useEffect(() => {
+    setName(student.name);
+    setPhone(student.phone || "");
+    setParentPhone(student.parentPhone || "");
+    setPhoto(student.photo);
+    setEditing(false);
+  }, [student.id]);
+
+  const handlePhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (!name.trim()) return;
+    store.updateStudentInfo(student.id, { name: name.trim(), phone, parentPhone, photo });
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <>
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
+          </div>
+          <div className="flex-1">
+            <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
+            <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>الرقم التسلسلي: {student.serial}</p>
+          </div>
+          <button onClick={() => setEditing(true)} className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }} aria-label="تعديل">
+            <Pencil size={15} style={{ color: ACCENT }} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم الطالب</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.phone || "—"}</p>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم ولي الأمر</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.parentPhone || "—"}</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="mb-4 p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+      <div className="flex items-center gap-4 mb-4">
+        <label className="relative cursor-pointer">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+            {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <Camera size={18} style={{ color: INK_MUTED }} />}
+          </div>
+          <input type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
+        </label>
+        <p className="text-xs" style={{ color: INK_MUTED }}>اضغط الصورة لتغييرها</p>
+      </div>
+      <Field label="الاسم"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="رقم الطالب"><TextInput value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+      <Field label="رقم ولي الأمر"><TextInput value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} /></Field>
+      <div className="flex gap-2 mt-1">
+        <button onClick={() => setEditing(false)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+        <button onClick={save} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white" style={{ background: ACCENT }}>حفظ</button>
+      </div>
+    </div>
+  );
+}
+
 function ArchiveScreen({ store, onBack }) {
   const [query, setQuery] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -1628,7 +1724,7 @@ function ArchiveScreen({ store, onBack }) {
     const subj = getSubject(subjectId);
     return (
       <ScreenShell title={subj.name} onBack={() => setSubjectId(null)}>
-        <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} />
+        <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} editable store={store} studentId={student.id} />
       </ScreenShell>
     );
   }
@@ -1636,26 +1732,7 @@ function ArchiveScreen({ store, onBack }) {
   if (student) {
     return (
       <ScreenShell title="ملف الطالب" onBack={() => { setStudentId(""); setConfirmDelete(false); }}>
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
-            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
-          </div>
-          <div>
-            <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
-            <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>الرقم التسلسلي: {student.serial}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
-            <p className="text-xs" style={{ color: INK_MUTED }}>رقم الطالب</p>
-            <p className="text-sm mt-1" style={{ color: INK }}>{student.phone || "—"}</p>
-          </div>
-          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
-            <p className="text-xs" style={{ color: INK_MUTED }}>رقم ولي الأمر</p>
-            <p className="text-sm mt-1" style={{ color: INK }}>{student.parentPhone || "—"}</p>
-          </div>
-        </div>
+        <StudentHeaderEditable store={store} student={student} />
 
         <div className="flex gap-2 mb-6">
           <button
@@ -1689,6 +1766,26 @@ function ArchiveScreen({ store, onBack }) {
             </button>
           ))}
           {Object.keys(student.enrollments).length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>الطالب غير مسجل بأي مادة بعد.</p>}
+        </div>
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الدفعات</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {store.installments.filter((i) => i.studentId === student.id).length === 0 && (
+            <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه دفعات مسجلة لهذا الطالب.</p>
+          )}
+          {store.installments.filter((i) => i.studentId === student.id).map((h) => (
+            <div key={h.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-sm font-medium" style={{ color: INK }}>{Number(h.amountNumber).toLocaleString("ar")} د.ع</p>
+                <button onClick={() => { if (confirm("حذف هذي الدفعة؟")) store.deleteInstallment(h.id); }} style={{ color: DANGER }} aria-label="حذف">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: INK_MUTED }}>{h.date} · متبقي {h.remaining || "—"}</p>
+              {h.accountant && <p className="text-xs mt-1" style={{ color: INK_MUTED }}>المحاسب: {h.accountant}</p>}
+              {h.note && <p className="text-xs mt-1" style={{ color: INK }}>{h.note}</p>}
+            </div>
+          ))}
         </div>
 
         {!confirmDelete ? (
@@ -2209,10 +2306,14 @@ export default function MasarApp() {
       return serial;
     },
     updateEnrollment: withReload(dbUpdateEnrollment),
+    updateStudentInfo: withReload(dbUpdateStudentInfo),
+    updateGradeResult: withReload(dbUpdateGradeResult),
+    updateAttendanceEntry: withReload(dbUpdateAttendanceEntry),
     deleteStudent: withReload(dbDeleteStudent),
     addAttendanceRecord: withReload(dbAddAttendanceRecord),
     addGradeRecord: withReload(dbAddGradeRecord),
     addInstallment: withReload(dbAddInstallment),
+    deleteInstallment: withReload(dbDeleteInstallment),
     addNotification: withReload(dbAddNotification),
   };
 

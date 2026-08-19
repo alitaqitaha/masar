@@ -946,10 +946,9 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   return (
     <>
       <div className="rounded-2xl overflow-hidden mb-3 relative" style={{ background: INK, aspectRatio: "4/3" }}>
-        {cameraOn ? (
-          <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={(e) => e.target.play().catch(() => {})} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-2 px-4 text-center">
+        <video ref={videoRef} autoPlay playsInline muted onLoadedMetadata={(e) => e.target.play().catch(() => {})} className="w-full h-full object-cover" />
+        {!cameraOn && (
+          <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-2 px-4 text-center" style={{ background: INK }}>
             <ScanLine size={26} color="#fff" opacity={0.6} />
             <p className="text-xs" style={{ color: "#fff", opacity: 0.6, fontFamily: SANS }}>بانتظار إذن الكاميرا…</p>
             {cameraError && (

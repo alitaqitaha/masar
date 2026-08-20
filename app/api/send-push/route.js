@@ -53,6 +53,7 @@ export async function POST(request) {
     const payload = JSON.stringify({ title: title || "مسار", body });
 
     let sent = 0;
+    const failures = [];
     await Promise.all(
       (subs || []).map(async (sub) => {
         try {
@@ -62,6 +63,8 @@ export async function POST(request) {
           );
           sent += 1;
         } catch (err) {
+          console.error("sendNotification failed for", sub.endpoint, err);
+          failures.push({ endpoint: sub.endpoint, statusCode: err.statusCode, message: err.body || err.message });
           // اشتراك منتهي أو غير صالح — احذفه
           if (err.statusCode === 404 || err.statusCode === 410) {
             await supabaseAdmin.from("push_subscriptions").delete().eq("id", sub.id);
@@ -70,8 +73,9 @@ export async function POST(request) {
       })
     );
 
-    return Response.json({ sent });
+    return Response.json({ sent, failures });
   } catch (e) {
-    return Response.json({ error: e.message || "send-push failed" }, { status: 500 });
+    console.error("send-push error:", e);
+    return Response.json({ error: (e && (e.stack || e.message)) || "send-push failed" }, { status: 500 });
   }
 }

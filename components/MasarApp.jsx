@@ -2593,7 +2593,9 @@ function StudentDashboard({ store, studentId, onLogout }) {
   );
   const student = store.students.find((s) => s.id === studentId) || store.students[0];
 
+  const [pushError, setPushError] = useState(null);
   const enablePush = async () => {
+    setPushError(null);
     try {
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         setPushStatus("unsupported");
@@ -2603,16 +2605,19 @@ function StudentDashboard({ store, studentId, onLogout }) {
       const permission = await Notification.requestPermission();
       setPushStatus(permission);
       if (permission !== "granted") return;
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) throw new Error("NEXT_PUBLIC_VAPID_PUBLIC_KEY غير موجود بالبناء الحالي");
       const existing = await registration.pushManager.getSubscription();
       const subscription =
         existing ||
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
         }));
       await store.savePushSubscription(student.id, subscription.toJSON());
     } catch (e) {
-      /* subscription failed — student can retry from the banner */
+      console.error("enablePush failed:", e);
+      setPushError((e && e.message) || String(e));
     }
   };
 
@@ -2654,19 +2659,24 @@ function StudentDashboard({ store, studentId, onLogout }) {
       </header>
       <main className="px-5" style={{ fontFamily: SANS }}>
         {pushStatus !== "granted" && pushStatus !== "unsupported" && (
-          <button
-            onClick={enablePush}
-            className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-6 text-right"
-            style={{ background: ACCENT_SOFT }}
-          >
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
-              <Bell size={18} style={{ color: ACCENT }} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
-              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
-            </div>
-          </button>
+          <>
+            <button
+              onClick={enablePush}
+              className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-2 text-right"
+              style={{ background: ACCENT_SOFT }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+                <Bell size={18} style={{ color: ACCENT }} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
+              </div>
+            </button>
+            {pushError && (
+              <p className="text-xs mb-4" style={{ color: DANGER }}>خطأ: {pushError}</p>
+            )}
+          </>
         )}
         <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>موادي</p>
         <div className="flex flex-col gap-2.5 mb-8">

@@ -17,6 +17,7 @@ import {
   addInstallment as dbAddInstallment,
   deleteInstallment as dbDeleteInstallment,
   addNotification as dbAddNotification,
+  savePushSubscription as dbSavePushSubscription,
   updateEnrollment as dbUpdateEnrollment,
   updateStudentInfo as dbUpdateStudentInfo,
   updateGradeResult as dbUpdateGradeResult,
@@ -2576,9 +2577,44 @@ function StudentSubjectDetail({ store, student, subjectId, onBack }) {
     </div>
   );
 }
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
 function StudentDashboard({ store, studentId, onLogout }) {
   const [openSubject, setOpenSubject] = useState(null);
+  const [pushStatus, setPushStatus] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
   const student = store.students.find((s) => s.id === studentId) || store.students[0];
+
+  const enablePush = async () => {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setPushStatus("unsupported");
+        return;
+      }
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      setPushStatus(permission);
+      if (permission !== "granted") return;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+        }));
+      await store.savePushSubscription(student.id, subscription.toJSON());
+    } catch (e) {
+      /* subscription failed — student can retry from the banner */
+    }
+  };
 
   if (!student) {
     return (
@@ -2617,6 +2653,21 @@ function StudentDashboard({ store, studentId, onLogout }) {
         <div style={{ fontFamily: SANS }}><PathDivider /></div>
       </header>
       <main className="px-5" style={{ fontFamily: SANS }}>
+        {pushStatus !== "granted" && pushStatus !== "unsupported" && (
+          <button
+            onClick={enablePush}
+            className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-6 text-right"
+            style={{ background: ACCENT_SOFT }}
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+              <Bell size={18} style={{ color: ACCENT }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
+            </div>
+          </button>
+        )}
         <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>موادي</p>
         <div className="flex flex-col gap-2.5 mb-8">
           {SUBJECTS.map((s) => {
@@ -2747,6 +2798,7 @@ export default function MasarApp() {
     addInstallment: withReload(dbAddInstallment),
     deleteInstallment: withReload(dbDeleteInstallment),
     addNotification: withReload(dbAddNotification),
+    savePushSubscription: dbSavePushSubscription,
   };
 
   return (

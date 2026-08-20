@@ -1,13 +1,15 @@
 import webpush from "web-push";
-import { supabaseAdmin } from "../../../lib/supabaseAdmin";
+import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 
-webpush.setVapidDetails(
-  "mailto:no-reply@masar.app",
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+function ensureVapid() {
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const priv = process.env.VAPID_PRIVATE_KEY;
+  if (!pub) throw new Error("NEXT_PUBLIC_VAPID_PUBLIC_KEY غير موجود بمتغيرات البيئة");
+  if (!priv) throw new Error("VAPID_PRIVATE_KEY غير موجود بمتغيرات البيئة");
+  webpush.setVapidDetails("mailto:no-reply@masar.app", pub, priv);
+}
 
-async function resolveStudentIds(target) {
+async function resolveStudentIds(supabaseAdmin, target) {
   if (target.type === "student" && target.studentId) {
     return [target.studentId];
   }
@@ -29,12 +31,15 @@ async function resolveStudentIds(target) {
 
 export async function POST(request) {
   try {
+    ensureVapid();
+    const supabaseAdmin = getSupabaseAdmin();
+
     const { title, body, target } = await request.json();
     if (!body || !target) {
       return Response.json({ error: "missing fields" }, { status: 400 });
     }
 
-    const studentIds = await resolveStudentIds(target);
+    const studentIds = await resolveStudentIds(supabaseAdmin, target);
     if (studentIds.length === 0) {
       return Response.json({ sent: 0 });
     }

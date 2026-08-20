@@ -87,6 +87,35 @@ let idCounter = 1000;
 const uid = (prefix) => `${prefix}-${idCounter++}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
+function compressImageFile(file, maxDim = 400, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("تعذرت قراءة الملف"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("تعذر فتح الصورة"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const SUBJECTS = [
   { id: "ar", name: "اللغة العربية", icon: BookOpen },
   { id: "math", name: "الرياضيات", icon: Calculator },
@@ -253,11 +282,13 @@ function LoginScreen({ students, onLogin }) {
   const submit = (e) => {
     e.preventDefault();
     setError("");
+    const u = username.trim();
+    const p = password.trim();
     if (role === "admin") {
-      if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) onLogin("admin");
+      if (u === ADMIN_USERNAME && p === ADMIN_PASSWORD) onLogin("admin");
       else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     } else {
-      const match = students.find((s) => s.username === username && s.password === password);
+      const match = students.find((s) => s.username === u && s.password === p);
       if (match) onLogin("student", match.id);
       else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
     }
@@ -277,11 +308,13 @@ function LoginScreen({ students, onLogin }) {
           <RoleToggle role={role} setRole={(r) => { setRole(r); setError(""); }} />
           <label className="block text-sm mb-1.5" style={{ color: INK }}>اسم المستخدم</label>
           <input required value={username} onChange={(e) => setUsername(e.target.value)} placeholder="أدخل اسم المستخدم"
+            autoCapitalize="off" autoCorrect="off" spellCheck="false" autoComplete="username"
             className="w-full mb-4 rounded-xl px-4 py-3 text-sm outline-none border transition-colors" style={{ borderColor: BORDER, color: INK }}
             onFocus={(e) => (e.target.style.borderColor = ACCENT)} onBlur={(e) => (e.target.style.borderColor = BORDER)} />
           <label className="block text-sm mb-1.5" style={{ color: INK }}>كلمة المرور</label>
           <div className="relative mb-2">
             <input required type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="أدخل كلمة المرور"
+              autoCapitalize="off" autoCorrect="off" spellCheck="false" autoComplete="current-password"
               className="w-full rounded-xl px-4 py-3 pl-11 text-sm outline-none border transition-colors" style={{ borderColor: BORDER, color: INK }}
               onFocus={(e) => (e.target.style.borderColor = ACCENT)} onBlur={(e) => (e.target.style.borderColor = BORDER)} />
             <button type="button" onClick={() => setShowPass((s) => !s)} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: INK_MUTED }} aria-label="إظهار">
@@ -387,17 +420,125 @@ function GroupPicker({ groups, value, onChange }) {
 }
 
 /* ============================== add teacher ============================== */
+function formatTime(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleTimeString("ar-IQ", { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    return "";
+  }
+}
+
+function TeacherAttendanceLogScreen({ store, teacher, onBack }) {
+  const [openRecordId, setOpenRecordId] = useState(null);
+  const records = store.attendanceRecords
+    .filter((r) => r.teacherId === teacher.id)
+    .slice()
+    .sort((a, b) => (b.createdAt || b.date || "").localeCompare(a.createdAt || a.date || ""));
+
+  const openRecord = records.find((r) => r.id === openRecordId);
+  if (openRecord) {
+    const groupName = teacher.groups.find((g) => g.id === openRecord.groupId)?.name || "";
+    const students = openRecord.allGroupStudentIds.map((id) => store.students.find((s) => s.id === id)).filter(Boolean);
+    return (
+      <AttendanceResultsShareScreen
+        subjectName={getSubject(teacher.subjectId).name}
+        teacherName={teacher.name}
+        groupName={groupName}
+        date={openRecord.date}
+        time={formatTime(openRecord.createdAt)}
+        students={students}
+        presentIds={openRecord.presentIds}
+        onBack={() => setOpenRecordId(null)}
+      />
+    );
+  }
+
+  return (
+    <ScreenShell title={`سجلات حضور ${teacher.name}`} onBack={onBack}>
+      {records.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه جلسات حضور مسجلة بعد.</p>}
+      <div className="flex flex-col gap-2.5">
+        {records.map((r) => {
+          const groupName = teacher.groups.find((g) => g.id === r.groupId)?.name || "";
+          return (
+            <button key={r.id} onClick={() => setOpenRecordId(r.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{groupName}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{r.date}{r.createdAt ? ` · ${formatTime(r.createdAt)}` : ""} · {r.presentIds.length}/{r.allGroupStudentIds.length} حاضر</p>
+              </div>
+              <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+            </button>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+function TeacherExamLogScreen({ store, teacher, onBack }) {
+  const [openRecordId, setOpenRecordId] = useState(null);
+  const records = store.gradeRecords
+    .filter((r) => r.teacherId === teacher.id)
+    .slice()
+    .sort((a, b) => (b.createdAt || b.date || "").localeCompare(a.createdAt || a.date || ""));
+
+  const openRecord = records.find((r) => r.id === openRecordId);
+  if (openRecord) {
+    const groupName = teacher.groups.find((g) => g.id === openRecord.groupId)?.name || "";
+    const roster = Object.keys(openRecord.results).map((id) => store.students.find((s) => s.id === id)).filter(Boolean);
+    return (
+      <ExamResultsShareScreen
+        subjectName={getSubject(teacher.subjectId).name}
+        teacherName={teacher.name}
+        groupName={groupName}
+        examName={openRecord.examName}
+        examType={openRecord.examType}
+        date={openRecord.date}
+        time={formatTime(openRecord.createdAt)}
+        fullScore={openRecord.fullScore}
+        roster={roster}
+        results={openRecord.results}
+        onBack={() => setOpenRecordId(null)}
+      />
+    );
+  }
+
+  return (
+    <ScreenShell title={`سجلات امتحانات ${teacher.name}`} onBack={onBack}>
+      {records.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه امتحانات مسجلة بعد.</p>}
+      <div className="flex flex-col gap-2.5">
+        {records.map((r) => {
+          const groupName = teacher.groups.find((g) => g.id === r.groupId)?.name || "";
+          return (
+            <button key={r.id} onClick={() => setOpenRecordId(r.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{r.examName}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{groupName} · {r.examType} · {r.date}{r.createdAt ? ` · ${formatTime(r.createdAt)}` : ""}</p>
+              </div>
+              <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+            </button>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
 function TeacherDetailScreen({ store, teacher, onBack, onDeleted }) {
   const subj = getSubject(teacher.subjectId);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(teacher.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [openLog, setOpenLog] = useState(null); // null | "attendance" | "exams"
 
   const saveName = () => {
     if (!name.trim()) return;
     store.updateTeacherName(teacher.id, name.trim());
     setEditing(false);
   };
+
+  if (openLog === "attendance") return <TeacherAttendanceLogScreen store={store} teacher={teacher} onBack={() => setOpenLog(null)} />;
+  if (openLog === "exams") return <TeacherExamLogScreen store={store} teacher={teacher} onBack={() => setOpenLog(null)} />;
 
   return (
     <ScreenShell title={editing ? "تعديل اسم المدرس" : teacher.name} onBack={onBack}>
@@ -420,6 +561,15 @@ function TeacherDetailScreen({ store, teacher, onBack, onDeleted }) {
           </button>
         </div>
       )}
+
+      <div className="flex gap-2 mb-6">
+        <button onClick={() => setOpenLog("attendance")} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>
+          <ClipboardCheck size={14} style={{ color: ACCENT }} /> سجلات الحضور
+        </button>
+        <button onClick={() => setOpenLog("exams")} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>
+          <ClipboardList size={14} style={{ color: ACCENT }} /> سجلات الامتحانات
+        </button>
+      </div>
 
       <div className="flex flex-col gap-4 mb-8">
         {teacher.groups.map((g) => {
@@ -578,63 +728,75 @@ function IDCardPrintScreen({ student, onBack }) {
         @media print {
           body * { visibility: hidden; }
           #id-card-print, #id-card-print * { visibility: visible; }
-          #id-card-print { position: fixed; inset: 0; margin: auto; box-shadow: none !important; }
+          #id-card-wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+          #id-card-print { transform: none !important; box-shadow: none !important; }
         }
       `}</style>
 
       <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
 
-      <div
-        id="id-card-print"
-        className="relative mx-auto rounded-3xl overflow-hidden"
-        style={{ width: 360, background: "#fff", boxShadow: "0 16px 32px rgba(22,33,29,0.2)" }}
-      >
-        {/* header: logo block (left) + title block (right) */}
-        <div className="flex">
-          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 92, background: "#fff" }}>
-            <MasarMark size={38} on="light" />
-          </div>
-          <div className="flex-1 flex flex-col justify-center py-3 px-4" style={{ background: ACCENT }} dir="rtl">
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 19, textAlign: "right" }}>معهد العلوم التعليمي</p>
-            <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10, letterSpacing: 1, textAlign: "right" }}>AL-ULOOM EDUCATIONAL INSTITUTE</p>
-          </div>
-        </div>
-        <div style={{ height: 4, background: ACCENT }} />
-
-        {/* body */}
-        <div className="flex items-start gap-4 px-5 py-5" style={{ background: "#fff" }}>
-          {/* QR — left */}
-          <div className="flex-shrink-0 rounded-xl p-2" style={{ border: `2px solid ${ACCENT}` }}>
-            <QRCodeSVG value={student.serial} size={82} fgColor={INK} bgColor="#ffffff" />
+      {/* preview wrapper: scales the true-size card up for on-screen legibility; print CSS removes the scale */}
+      <div id="id-card-wrap" className="flex justify-center" style={{ paddingBottom: "112mm" }}>
+        <div
+          id="id-card-print"
+          className="relative overflow-hidden"
+          style={{
+            width: "85.6mm",
+            height: "53.98mm",
+            background: "#fff",
+            boxShadow: "0 16px 32px rgba(22,33,29,0.2)",
+            borderRadius: "3.2mm",
+            transform: "scale(3)",
+            transformOrigin: "top center",
+          }}
+        >
+          {/* header */}
+          <div className="flex items-center gap-1.5 px-2" style={{ height: "8mm", background: ACCENT }} dir="rtl">
+            <MasarMark size={14} on="dark" />
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: "3.2mm", whiteSpace: "nowrap" }}>معهد العلوم التعليمي</p>
           </div>
 
-          {/* fields — middle */}
-          <div className="flex-1 flex flex-col gap-3 pt-1">
-            <IDField icon={User} label="الاسم" value={student.name} />
-            <IDField icon={Hash} label="الرقم التسلسلي" value={student.serial} />
-            <IDField icon={Layers} label="الصف" value="السادس الإعدادي" />
-          </div>
-
-          {/* photo — right */}
-          <div className="flex-shrink-0 flex flex-col items-center">
+          {/* body */}
+          <div className="flex items-center gap-2 px-2" style={{ height: "34mm" }} dir="rtl">
+            {/* photo */}
             <div
-              className="rounded-xl overflow-hidden flex items-center justify-center"
-              style={{ width: 92, height: 100, border: `2.5px solid ${ACCENT}`, background: SURFACE }}
+              className="flex-shrink-0 rounded-md overflow-hidden flex items-center justify-center"
+              style={{ width: "13mm", height: "16mm", border: `0.4mm solid ${ACCENT}`, background: SURFACE }}
             >
               {student.photo ? (
                 <img src={student.photo} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 26 }}>{student.name[0]}</span>
+                <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: "4mm" }}>{student.name[0]}</span>
               )}
             </div>
-            <p className="mt-1.5 text-center" style={{ fontFamily: DISPLAY, fontWeight: 800, color: INK, fontSize: 11, letterSpacing: 0.5 }}>STUDENT ID</p>
-            <p className="text-center" style={{ color: INK_MUTED, fontSize: 8 }}>Al-Uloom Institute</p>
-          </div>
-        </div>
 
-        {/* footer */}
-        <div className="px-5 py-3 text-center" style={{ background: ACCENT }}>
-          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.9)", fontFamily: SANS }}>هذه البطاقة وثيقة رسمية ملك لمعهد العلوم التعليمي، ويجب إبرازها عند الطلب</p>
+            {/* fields */}
+            <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+              <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: "3.4mm", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {student.name}
+              </p>
+              <div className="flex items-center gap-1" style={{ whiteSpace: "nowrap" }}>
+                <Hash size={7} style={{ color: ACCENT, flexShrink: 0 }} />
+                <p style={{ fontSize: "2.6mm", color: INK }}>{student.serial}</p>
+              </div>
+              <div className="flex items-center gap-1" style={{ whiteSpace: "nowrap" }}>
+                <Layers size={7} style={{ color: ACCENT, flexShrink: 0 }} />
+                <p style={{ fontSize: "2.6mm", color: INK }}>السادس الإعدادي</p>
+              </div>
+            </div>
+
+            {/* QR */}
+            <div className="flex-shrink-0 rounded-md p-1" style={{ border: `0.3mm solid ${ACCENT}` }}>
+              <QRCodeSVG value={student.serial} size={13 * 3.78} fgColor={INK} bgColor="#ffffff" style={{ width: "13mm", height: "13mm" }} />
+            </div>
+          </div>
+
+          {/* footer */}
+          <div className="flex items-center justify-center px-2" style={{ height: "12mm", background: ACCENT }}>
+            <p style={{ fontSize: "2.3mm", color: "rgba(255,255,255,0.9)", textAlign: "center", lineHeight: 1.3 }}>
+              هذه البطاقة وثيقة رسمية ملك لمعهد العلوم التعليمي ويجب إبرازها عند الطلب
+            </p>
+          </div>
         </div>
       </div>
 
@@ -647,7 +809,7 @@ function IDCardPrintScreen({ student, onBack }) {
           <Printer size={16} /> طباعة / حفظ كملف PDF
         </button>
         <p className="text-xs text-center mt-3" style={{ color: INK_MUTED }}>
-          بعد الضغط، اختر «حفظ كـ PDF» بدل الطابعة، بعدها تقدر تشارك الملف مباشرة بتلغرام أو واتساب.
+          الحجم مضبوط بالضبط على مقاس بطاقة RFID القياسي (85.6×54 ملم) — المعاينة مكبّرة للوضوح بس، الطباعة تصير بالحجم الحقيقي تلقائياً. بعد الضغط، اختر «حفظ كـ PDF» بدل الطابعة، بعدها تقدر تشارك الملف مباشرة بتلغرام أو واتساب.
         </p>
       </div>
     </div>
@@ -668,9 +830,7 @@ function AddStudentScreen({ store, onBack }) {
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result);
-    reader.readAsDataURL(file);
+    compressImageFile(file).then(setPhoto).catch(() => {});
   };
 
   const setSubjectTeacher = (subjectId, teacherId) => {
@@ -1101,6 +1261,148 @@ function AttendanceScreen({ store, onBack }) {
 }
 
 /* ============================== grades ============================== */
+function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName, examType, date, time, fullScore, roster, results, onBack }) {
+  const rows = roster.map((s) => ({ student: s, r: results[s.id] }));
+
+  const shareText = [
+    `نتائج ${examName} (${examType}) — ${subjectName}`,
+    `${teacherName} · ${groupName} · ${date}${time ? ` · ${time}` : ""}`,
+    "",
+    ...rows.map(({ student, r }) => `${student.name}: ${r?.status === "طبيعي" ? `${r.score || 0}/${fullScore}` : r?.status || "—"}`),
+  ].join("\n");
+
+  const handleShareText = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+  };
+
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #exam-report-print, #exam-report-print * { visibility: visible; }
+          #exam-report-print { position: fixed; inset: 0; margin: auto; }
+        }
+      `}</style>
+      <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
+
+      <div id="exam-report-print" className="mx-auto rounded-2xl overflow-hidden border" style={{ maxWidth: 420, borderColor: BORDER }}>
+        <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
+          <LogoBadge size={36} />
+          <div>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>نتائج امتحان · نظام مسار</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="mb-5 pb-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{examName}</p>
+            <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{subjectName} · {examType} · {date}{time ? ` · ${time}` : ""}</p>
+            <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {rows.map(({ student, r }, i) => (
+              <div key={i} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
+                <p style={{ fontSize: 12, color: INK }}>{student.name}</p>
+                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 13, color: r?.status === "غش" ? DANGER : ACCENT }}>
+                  {r?.status === "طبيعي" ? `${r.score || 0}/${fullScore}` : r?.status || "—"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-5 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
+          <p style={{ fontSize: 9, color: INK_MUTED }}>تقرير صادر آلياً من نظام مسار</p>
+        </div>
+      </div>
+
+      <div className="max-w-[420px] mx-auto mt-6 flex flex-col gap-2.5 no-print">
+        <button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: ACCENT, fontFamily: SANS }}>
+          <Printer size={16} /> طباعة / حفظ كـ PDF
+        </button>
+        <button onClick={handleShareText} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: "#25D366", fontFamily: SANS }}>
+          <MessageCircle size={16} /> مشاركة النتائج عبر واتساب
+        </button>
+        <p className="text-xs text-center leading-6" style={{ color: INK_MUTED }}>
+          زر واتساب يفتح النتائج كنص جاهز تختار له كروب أولياء الأمور مباشرة. أو احفظ التقرير أعلاه كـ PDF من الزر الأول وأرفقه يدوياً لو حبيت شكل ملف.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, date, time, students, presentIds, onBack }) {
+  const rows = students.map((s) => ({ student: s, present: presentIds.includes(s.id) }));
+  const presentCount = rows.filter((r) => r.present).length;
+
+  const shareText = [
+    `تقرير حضور ${subjectName} — ${teacherName} · ${groupName}`,
+    `${date}${time ? ` · ${time}` : ""}`,
+    "",
+    ...rows.map(({ student, present }) => `${student.name}: ${present ? "حاضر" : "غائب"}`),
+  ].join("\n");
+
+  const handleShareText = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+  };
+
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #attendance-report-print, #attendance-report-print * { visibility: visible; }
+          #attendance-report-print { position: fixed; inset: 0; margin: auto; }
+        }
+      `}</style>
+      <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
+
+      <div id="attendance-report-print" className="mx-auto rounded-2xl overflow-hidden border" style={{ maxWidth: 420, borderColor: BORDER }}>
+        <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
+          <LogoBadge size={36} />
+          <div>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>تقرير حضور · نظام مسار</p>
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-5 pb-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            <div>
+              <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 15 }}>{subjectName}</p>
+              <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
+            </div>
+            <div className="text-left">
+              <p style={{ fontSize: 11, color: INK_MUTED }}>{date}</p>
+              {time && <p style={{ fontSize: 11, color: INK_MUTED }}>{time}</p>}
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: ACCENT, marginBottom: 10 }}>{presentCount} حاضر من أصل {rows.length}</p>
+          <div className="flex flex-col gap-2">
+            {rows.map(({ student, present }, i) => (
+              <div key={i} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
+                <p style={{ fontSize: 12, color: INK }}>{student.name}</p>
+                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 12, color: present ? ACCENT : DANGER }}>{present ? "حاضر" : "غائب"}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-5 py-2.5 text-center" style={{ background: SURFACE, borderTop: `1px solid ${BORDER}` }}>
+          <p style={{ fontSize: 9, color: INK_MUTED }}>تقرير صادر آلياً من نظام مسار</p>
+        </div>
+      </div>
+
+      <div className="max-w-[420px] mx-auto mt-6 flex flex-col gap-2.5 no-print">
+        <button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: ACCENT, fontFamily: SANS }}>
+          <Printer size={16} /> طباعة / حفظ كـ PDF
+        </button>
+        <button onClick={handleShareText} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white" style={{ background: "#25D366", fontFamily: SANS }}>
+          <MessageCircle size={16} /> مشاركة عبر واتساب
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GradesScreen({ store, onBack }) {
   const [teacherId, setTeacherId] = useState("");
   const [groupId, setGroupId] = useState("");
@@ -1113,6 +1415,7 @@ function GradesScreen({ store, onBack }) {
   const [results, setResults] = useState({});
   const [query, setQuery] = useState("");
   const [done, setDone] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   const teacher = store.teachers.find((t) => t.id === teacherId);
   const roster = teacher && groupId ? studentsInGroup(store.students, teacher.subjectId, teacherId, groupId) : [];
@@ -1124,10 +1427,47 @@ function GradesScreen({ store, onBack }) {
   const finish = () => {
     store.addGradeRecord({ subjectId: teacher.subjectId, teacherId, groupId, examName, examType, date, passScore, fullScore, results });
     setDone(true);
-    setTimeout(() => { setDone(false); setTeacherId(""); setGroupId(""); setExamConfirmed(false); setExamName(""); setResults({}); }, 2200);
   };
 
-  if (done) return <ScreenShell title="تسجيل درجات" onBack={onBack}><SuccessNote>تم حفظ درجات «{examName}».</SuccessNote></ScreenShell>;
+  const resetAll = () => {
+    setDone(false); setShowShare(false); setTeacherId(""); setGroupId(""); setExamConfirmed(false); setExamName(""); setResults({});
+  };
+
+  if (done) {
+    if (showShare) {
+      const subj = getSubject(teacher.subjectId);
+      const groupName = teacher.groups.find((g) => g.id === groupId)?.name || "";
+      return (
+        <ExamResultsShareScreen
+          subjectName={subj.name}
+          teacherName={teacher.name}
+          groupName={groupName}
+          examName={examName}
+          examType={examType}
+          date={date}
+          fullScore={fullScore}
+          roster={roster}
+          results={results}
+          onBack={() => setShowShare(false)}
+        />
+      );
+    }
+    return (
+      <ScreenShell title="تسجيل درجات" onBack={resetAll}>
+        <SuccessNote>تم حفظ درجات «{examName}».</SuccessNote>
+        <div className="flex flex-col gap-2.5">
+          <button
+            onClick={() => setShowShare(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
+            style={{ background: "#25D366", fontFamily: SANS }}
+          >
+            <MessageCircle size={16} /> مشاركة النتائج
+          </button>
+          <button onClick={resetAll} className="text-sm" style={{ color: ACCENT, fontFamily: SANS }}>تسجيل امتحان آخر</button>
+        </div>
+      </ScreenShell>
+    );
+  }
 
   if (!teacherId) {
     return (
@@ -1701,9 +2041,7 @@ function StudentHeaderEditable({ store, student }) {
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result);
-    reader.readAsDataURL(file);
+    compressImageFile(file).then(setPhoto).catch(() => {});
   };
 
   const save = () => {
@@ -1983,12 +2321,26 @@ function NotificationsScreen({ store, onBack }) {
 
       <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>الإشعارات المرسلة</p>
       <div className="flex flex-col gap-2.5">
-        {[...store.notifications].reverse().map((n) => (
-          <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
-            <p className="text-sm" style={{ color: INK }}>{n.text}</p>
-            <p className="text-xs mt-1.5" style={{ color: INK_MUTED }}>{n.date}</p>
-          </div>
-        ))}
+        {[...store.notifications].reverse().map((n) => {
+          let recipient = "الكل";
+          if (n.target.type === "student") {
+            const s = store.students.find((st) => st.id === n.target.studentId);
+            recipient = s ? s.name : "طالب محذوف";
+          } else if (n.target.type === "group") {
+            const t = store.teachers.find((tt) => tt.id === n.target.teacherId);
+            const g = t?.groups.find((gg) => gg.id === n.target.groupId);
+            recipient = t ? `${t.name} · ${g?.name || ""}` : "مجموعة";
+          }
+          return (
+            <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm" style={{ color: INK }}>{n.text}</p>
+              <div className="flex items-center justify-between mt-1.5">
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: ACCENT_SOFT, color: ACCENT }}>{recipient}</span>
+                <p className="text-xs" style={{ color: INK_MUTED }}>{n.date}</p>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </ScreenShell>
   );
@@ -2324,6 +2676,21 @@ export default function MasarApp() {
     reload();
   }, []);
 
+  useEffect(() => {
+    if (!data || session) return;
+    try {
+      const savedId = window.localStorage.getItem("masar_student_id");
+      if (savedId && data.students.some((s) => s.id === savedId)) {
+        setSession("student");
+        setLoggedInStudentId(savedId);
+      } else if (savedId) {
+        window.localStorage.removeItem("masar_student_id");
+      }
+    } catch (e) {
+      /* localStorage unavailable — fall back to normal login each time */
+    }
+  }, [data]);
+
   const withReload = (fn) => async (...args) => {
     setBusy(true);
     try {
@@ -2391,8 +2758,29 @@ export default function MasarApp() {
         </div>
       )}
       {session === "admin" && <AdminDashboard store={store} onLogout={() => setSession(null)} />}
-      {session === "student" && <StudentDashboard store={store} studentId={loggedInStudentId} onLogout={() => { setSession(null); setLoggedInStudentId(null); }} />}
-      {!session && <LoginScreen students={data.students} onLogin={(role, studentId) => { setSession(role); setLoggedInStudentId(studentId || null); }} />}
+      {session === "student" && (
+        <StudentDashboard
+          store={store}
+          studentId={loggedInStudentId}
+          onLogout={() => {
+            setSession(null);
+            setLoggedInStudentId(null);
+            try { window.localStorage.removeItem("masar_student_id"); } catch (e) {}
+          }}
+        />
+      )}
+      {!session && (
+        <LoginScreen
+          students={data.students}
+          onLogin={(role, studentId) => {
+            setSession(role);
+            setLoggedInStudentId(studentId || null);
+            if (role === "student" && studentId) {
+              try { window.localStorage.setItem("masar_student_id", studentId); } catch (e) {}
+            }
+          }}
+        />
+      )}
     </>
   );
 }

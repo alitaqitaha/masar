@@ -2621,6 +2621,13 @@ function StudentDashboard({ store, studentId, onLogout }) {
     }
   };
 
+  React.useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted" && student) {
+      enablePush();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student?.id]);
+
   if (!student) {
     return (
       <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center px-5 text-center" style={{ background: "#FFFFFF", fontFamily: SANS }}>
@@ -2658,25 +2665,26 @@ function StudentDashboard({ store, studentId, onLogout }) {
         <div style={{ fontFamily: SANS }}><PathDivider /></div>
       </header>
       <main className="px-5" style={{ fontFamily: SANS }}>
-        {pushStatus !== "granted" && pushStatus !== "unsupported" && (
-          <>
-            <button
-              onClick={enablePush}
-              className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-2 text-right"
-              style={{ background: ACCENT_SOFT }}
-            >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
-                <Bell size={18} style={{ color: ACCENT }} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
-                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
-              </div>
-            </button>
-            {pushError && (
-              <p className="text-xs mb-4" style={{ color: DANGER }}>خطأ: {pushError}</p>
-            )}
-          </>
+        {pushStatus !== "unsupported" && pushStatus !== "granted" && (
+          <button
+            onClick={enablePush}
+            className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-2 text-right"
+            style={{ background: ACCENT_SOFT }}
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+              <Bell size={18} style={{ color: ACCENT }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
+            </div>
+          </button>
+        )}
+        {pushError && (
+          <div className="p-3.5 rounded-2xl mb-4" style={{ background: "#FBEAE8" }}>
+            <p className="text-xs" style={{ color: DANGER }}>تعذر تفعيل الإشعارات: {pushError}</p>
+            <button onClick={enablePush} className="text-xs mt-1.5 font-semibold" style={{ color: ACCENT }}>إعادة المحاولة</button>
+          </div>
         )}
         <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>موادي</p>
         <div className="flex flex-col gap-2.5 mb-8">

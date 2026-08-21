@@ -28,6 +28,7 @@ import {
   fetchInstitutes as dbFetchInstitutes,
   addInstitute as dbAddInstitute,
   deleteInstitute as dbDeleteInstitute,
+  toggleInstituteStatus as dbToggleInstituteStatus,
   OWNER_USERNAME,
   OWNER_PASSWORD,
 } from "../lib/data";
@@ -314,7 +315,11 @@ function LoginScreen({ onLogin }) {
         setError("اسم المستخدم أو كلمة المرور غير صحيحة");
       }
     } catch (e2) {
-      setError("تعذر الاتصال — تأكد من الإنترنت وحاول مرة ثانية");
+      if (e2 && e2.suspended) {
+        setError("هذا المعهد موقوف مؤقتاً — تواصل مع إدارة مسار");
+      } else {
+        setError("تعذر الاتصال — تأكد من الإنترنت وحاول مرة ثانية");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1578,7 +1583,7 @@ function GradesScreen({ store, onBack }) {
             <div key={s.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
               <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{s.name}</p>
               <div className="flex flex-wrap gap-2 mb-2">
-                {["طبيعي", "غش", "مجاز"].map((st) => (
+                {["طبيعي", "غش", "مجاز", "غائب"].map((st) => (
                   <Chip key={st} active={r?.status === st} onClick={() => setStatus(s.id, st)}>{st}</Chip>
                 ))}
               </div>
@@ -1739,7 +1744,7 @@ function SubjectRecordView({ subject, records, editable, store, studentId }) {
                   <p className="text-xs" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {["طبيعي", "غش", "مجاز"].map((st) => (
+                  {["طبيعي", "غش", "مجاز", "غائب"].map((st) => (
                     <Chip key={st} active={g.status === st} onClick={() => store.updateGradeResult(g.recordId, studentId, { status: st, score: st === "طبيعي" ? g.score : "" })}>{st}</Chip>
                   ))}
                 </div>
@@ -2835,16 +2840,31 @@ function OwnerDashboard({ store, onLogout }) {
         <div className="flex flex-col gap-2.5">
           {store.institutes.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه معاهد مسجلة بعد.</p>}
           {store.institutes.map((inst) => (
-            <div key={inst.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <div key={inst.id} className="p-3.5 rounded-2xl border" style={{ borderColor: inst.status === "suspended" ? DANGER : BORDER }}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium" style={{ color: INK }}>{inst.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium" style={{ color: INK }}>{inst.name}</p>
+                    {inst.status === "suspended" && (
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#FBEAE8", color: DANGER }}>موقوف</span>
+                    )}
+                  </div>
                   <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>يوزر الإدارة: {inst.adminUsername}</p>
+                  <p className="text-xs mt-1" style={{ color: INK_MUTED }}>{inst.studentCount} طالب · {inst.teacherCount} مدرس</p>
                 </div>
                 <button onClick={() => setConfirmDeleteId(confirmDeleteId === inst.id ? null : inst.id)} style={{ color: DANGER }} aria-label="حذف">
                   <Trash2 size={15} />
                 </button>
               </div>
+
+              <button
+                onClick={() => store.toggleInstituteStatus(inst.id, inst.status === "suspended" ? "active" : "suspended")}
+                className="w-full mt-3 rounded-lg py-2 text-xs font-semibold border"
+                style={{ borderColor: inst.status === "suspended" ? ACCENT : DANGER, color: inst.status === "suspended" ? ACCENT : DANGER }}
+              >
+                {inst.status === "suspended" ? "إعادة تفعيل المعهد" : "إيقاف المعهد مؤقتاً"}
+              </button>
+
               {confirmDeleteId === inst.id && (
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => setConfirmDeleteId(null)} className="flex-1 rounded-lg py-2 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
@@ -3004,6 +3024,7 @@ export default function MasarApp() {
         institutes: institutesList,
         addInstitute: withOwnerReload(dbAddInstitute),
         deleteInstitute: withOwnerReload(dbDeleteInstitute),
+        toggleInstituteStatus: withOwnerReload(dbToggleInstituteStatus),
       }
     : null;
 

@@ -1033,7 +1033,7 @@ function openWhatsapp(phone, message) {
   }
  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
   }
-       }
+       
 
 function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   const videoRef = React.useRef(null);

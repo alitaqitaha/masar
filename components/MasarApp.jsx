@@ -1033,7 +1033,63 @@ function openWhatsapp(phone, message) {
   }
  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
   }
-        
+       }
+
+function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
+  const videoRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+  const scanControlsRef = React.useRef(null);
+  const scanLockRef = React.useRef(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+  const [flashOn, setFlashOn] = useState(false);
+  const [flashSupported, setFlashSupported] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [feedback, setFeedback] = useState(null);
+  const rosterRef = React.useRef(roster);
+  const presentIdsRef = React.useRef(presentIds);
+  rosterRef.current = roster;
+  presentIdsRef.current = presentIds;
+  const scanStudent = (student) => {
+    if (presentIdsRef.current.includes(student.id)) {
+      setFeedback({ ok: false, text: ${student.name} مسجل حاضر مسبقاً });
+    } else {
+      onScan(student.id);
+      setFeedback({ ok: true, text: تم تسجيل ${student.name} حاضراً });
+    }
+    setManualCode("");
+    setTimeout(() => setFeedback(null), 2200);
+  };
+  const handleDetectedCode = (text) => {
+    if (scanLockRef.current) return;
+    const code = (text || "").trim();
+    if (!code) return;
+    const lower = code.toLowerCase();
+    const student = rosterRef.current.find((s) => s.serial.toLowerCase() === lower || s.serial.toLowerCase().endsWith(lower));
+    if (!student) return;
+    scanLockRef.current = true;
+    scanStudent(student);
+    setTimeout(() => { scanLockRef.current = false; }, 1500);
+  };
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (!window.isSecureContext) throw new Error("الموقع مو على اتصال آمن (HTTPS) — الكاميرا تحتاج اتصال آمن");
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("هذا المتصفح ما يدعم الوصول للكاميرا");
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          try {
+            await videoRef.current.play();
+          } catch (playErr) {}
+        }
+        setCameraOn(true);
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        setFlashSupported(Boolean(caps.torch)); 
 
         try {
           const reader = new BrowserMultiFormatReader();

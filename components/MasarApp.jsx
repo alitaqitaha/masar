@@ -23,6 +23,14 @@ import {
   updateGradeResult as dbUpdateGradeResult,
   updateAttendanceEntry as dbUpdateAttendanceEntry,
   deleteStudent as dbDeleteStudent,
+  loginInstituteAdmin as dbLoginInstituteAdmin,
+  loginStudent as dbLoginStudent,
+  fetchInstitutes as dbFetchInstitutes,
+  addInstitute as dbAddInstitute,
+  deleteInstitute as dbDeleteInstitute,
+  toggleInstituteStatus as dbToggleInstituteStatus,
+  OWNER_USERNAME,
+  OWNER_PASSWORD,
 } from "../lib/data";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { QRCodeSVG } from "qrcode.react";
@@ -43,6 +51,7 @@ import {
   Users,
   Layers,
   User,
+  Plus,
   Hash,
   Calculator,
   Languages,
@@ -143,8 +152,6 @@ const MANAGEMENT_ITEMS = [
   { id: "backup", label: "نسخة احتياطية", icon: Download, code: true },
 ];
 const ALL_ITEMS = [...DAILY_ITEMS, ...MANAGEMENT_ITEMS];
-const ADMIN_USERNAME = "Alalom";
-const ADMIN_PASSWORD = "aalliitik33";
 const MANAGEMENT_CODE = "72954108"; // رمز الآيتمات المحمية
 
 /* ============================== primitives ============================== */
@@ -273,25 +280,48 @@ function RoleToggle({ role, setRole }) {
     </div>
   );
 }
-function LoginScreen({ students, onLogin }) {
+function LoginScreen({ onLogin }) {
   const [role, setRole] = useState("admin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setError("");
     const u = username.trim();
     const p = password.trim();
-    if (role === "admin") {
-      if (u === ADMIN_USERNAME && p === ADMIN_PASSWORD) onLogin("admin");
-      else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
-    } else {
-      const match = students.find((s) => s.username === u && s.password === p);
-      if (match) onLogin("student", match.id);
-      else setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    setSubmitting(true);
+    try {
+      if (role === "admin") {
+        if (u === OWNER_USERNAME && p === OWNER_PASSWORD) {
+          await onLogin("owner", null);
+          return;
+        }
+        const institute = await dbLoginInstituteAdmin(u, p);
+        if (institute) {
+          await onLogin("institute-admin", { instituteId: institute.id, instituteName: institute.name, logoUrl: institute.logoUrl });
+          return;
+        }
+        setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+      } else {
+        const match = await dbLoginStudent(u, p);
+        if (match) {
+          await onLogin("student", { studentId: match.id, instituteId: match.institute_id });
+          return;
+        }
+        setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+      }
+    } catch (e2) {
+      if (e2 && e2.suspended) {
+        setError("هذا المعهد موقوف مؤقتاً — تواصل مع إدارة مسار");
+      } else {
+        setError("تعذر الاتصال — تأكد من الإنترنت وحاول مرة ثانية");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -323,7 +353,9 @@ function LoginScreen({ students, onLogin }) {
             </button>
           </div>
           {error && <p className="text-xs mb-4" style={{ color: DANGER }}>{error}</p>}
-          <div className="mt-4"><PrimaryButton type="submit">تسجيل الدخول</PrimaryButton></div>
+          <div className="mt-4">
+            <PrimaryButton type="submit" disabled={submitting}>{submitting ? "جارِ الدخول…" : "تسجيل الدخول"}</PrimaryButton>
+          </div>
         </form>
         <p className="text-center text-xs mt-6" style={{ color: INK_MUTED, fontFamily: SANS }}>جميع الحقوق محفوظة © 2026 مسار</p>
         <p className="text-center text-xs mt-1" style={{ color: INK_MUTED, fontFamily: SANS }}>تطوير: علي تقي</p>
@@ -827,6 +859,8 @@ function AddStudentScreen({ store, onBack }) {
   const [enroll, setEnroll] = useState({});
   const [done, setDone] = useState(null);
   const [showCard, setShowCard] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
@@ -841,16 +875,29 @@ function AddStudentScreen({ store, onBack }) {
     setEnroll((prev) => ({ ...prev, [subjectId]: { ...prev[subjectId], groupId } }));
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !username.trim() || !password.trim()) return;
+    setSubmitError("");
+    setSubmitting(true);
     const enrollments = {};
     Object.entries(enroll).forEach(([subjectId, v]) => {
       if (v && v.teacherId && v.groupId) enrollments[subjectId] = v;
     });
-    const serial = store.addStudent({ name: name.trim(), phone, parentPhone, photo, username: username.trim(), password: password.trim(), enrollments });
-    setDone(serial);
-    setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
+    try {
+      const serial = await store.addStudent({ name: name.trim(), phone, parentPhone, photo, username: username.trim(), password: password.trim(), enrollments });
+      setDone(serial);
+      setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
+    } catch (err) {
+      const msg = (err && err.message) || "";
+      if (msg.includes("duplicate") || msg.includes("unique")) {
+        setSubmitError("اسم المستخدم هذا مستخدم أصلاً — جرب اسم مستخدم ثاني");
+      } else {
+        setSubmitError("تعذر حفظ الطالب — حاول مرة ثانية");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const newStudent = done ? store.students.find((s) => s.serial === done) : null;
@@ -919,7 +966,8 @@ function AddStudentScreen({ store, onBack }) {
         <Field label="اسم المستخدم"><TextInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اسم مستخدم الطالب" required /></Field>
         <Field label="كلمة المرور"><TextInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="كلمة مرور الطالب" required /></Field>
 
-        <PrimaryButton type="submit">حفظ الطالب</PrimaryButton>
+        {submitError && <p className="text-xs mb-3" style={{ color: DANGER }}>{submitError}</p>}
+        <PrimaryButton type="submit" disabled={submitting}>{submitting ? "جارِ الحفظ…" : "حفظ الطالب"}</PrimaryButton>
       </form>
     </ScreenShell>
   );
@@ -1535,7 +1583,7 @@ function GradesScreen({ store, onBack }) {
             <div key={s.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
               <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{s.name}</p>
               <div className="flex flex-wrap gap-2 mb-2">
-                {["طبيعي", "غش", "مجاز"].map((st) => (
+                {["طبيعي", "غش", "مجاز", "غائب"].map((st) => (
                   <Chip key={st} active={r?.status === st} onClick={() => setStatus(s.id, st)}>{st}</Chip>
                 ))}
               </div>
@@ -1696,7 +1744,7 @@ function SubjectRecordView({ subject, records, editable, store, studentId }) {
                   <p className="text-xs" style={{ color: INK_MUTED }}>{g.examType} · {g.date}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {["طبيعي", "غش", "مجاز"].map((st) => (
+                  {["طبيعي", "غش", "مجاز", "غائب"].map((st) => (
                     <Chip key={st} active={g.status === st} onClick={() => store.updateGradeResult(g.recordId, studentId, { status: st, score: st === "طبيعي" ? g.score : "" })}>{st}</Chip>
                   ))}
                 </div>
@@ -2475,7 +2523,7 @@ function AdminDashboard({ store, onLogout }) {
   const [modalItem, setModalItem] = useState(null);
   const [unlockedIds, setUnlockedIds] = useState([]);
   const [openItemId, setOpenItemId] = useState(null);
-  const institute = { name: "معهد العلوم" };
+  const institute = { name: store.instituteName || "معهد" };
 
   const handleItemClick = (item) => {
     if (item.code && !unlockedIds.includes(item.id)) setModalItem(item);
@@ -2721,54 +2769,235 @@ function StudentDashboard({ store, studentId, onLogout }) {
 }
 
 /* ============================== root (Supabase-backed) ============================== */
-export default function MasarApp() {
-  const [session, setSession] = useState(null);
-  const [loggedInStudentId, setLoggedInStudentId] = useState(null);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+function OwnerDashboard({ store, onLogout }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  const reload = async () => {
+  const submitAdd = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
     try {
-      const fresh = await fetchAll();
-      setData(fresh);
-      setError(null);
-    } catch (e) {
-      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+      await store.addInstitute({ name: name.trim(), adminUsername: adminUsername.trim(), adminPassword: adminPassword.trim() });
+      setName(""); setAdminUsername(""); setAdminPassword("");
+      setShowAdd(false);
+    } catch (e2) {
+      setError(e2.message?.includes("duplicate") ? "اسم المستخدم هذا مستخدم أصلاً لمعهد ثاني" : "تعذر إضافة المعهد");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  useEffect(() => {
-    reload();
-  }, []);
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <LogoBadge size={46} />
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>لوحة المالك</p>
+              <p className="text-xs" style={{ color: INK_MUTED }}>كل المعاهد بمسار</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <StatCard icon={Users} value={store.institutes.length} label="معهد مسجل" />
+      </header>
 
-  useEffect(() => {
-    if (!data || session) return;
+      <main className="px-5">
+        {!showAdd ? (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-6 text-sm font-semibold text-white"
+            style={{ background: ACCENT }}
+          >
+            <Plus size={16} /> إضافة معهد جديد
+          </button>
+        ) : (
+          <form onSubmit={submitAdd} className="mb-6 p-4 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <p className="text-sm font-semibold mb-3" style={{ color: INK }}>معهد جديد</p>
+            <Field label="اسم المعهد"><TextInput value={name} onChange={(e) => setName(e.target.value)} required /></Field>
+            <Field label="يوزر إدارة المعهد"><TextInput value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} required /></Field>
+            <Field label="باسورد إدارة المعهد"><TextInput value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required /></Field>
+            {error && <p className="text-xs mb-3" style={{ color: DANGER }}>{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowAdd(false)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+              <button type="submit" disabled={busy} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40" style={{ background: ACCENT }}>
+                {busy ? "جارِ الإضافة…" : "إضافة"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المعاهد</p>
+        <div className="flex flex-col gap-2.5">
+          {store.institutes.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه معاهد مسجلة بعد.</p>}
+          {store.institutes.map((inst) => (
+            <div key={inst.id} className="p-3.5 rounded-2xl border" style={{ borderColor: inst.status === "suspended" ? DANGER : BORDER }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium" style={{ color: INK }}>{inst.name}</p>
+                    {inst.status === "suspended" && (
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#FBEAE8", color: DANGER }}>موقوف</span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>يوزر الإدارة: {inst.adminUsername}</p>
+                  <p className="text-xs mt-1" style={{ color: INK_MUTED }}>{inst.studentCount} طالب · {inst.teacherCount} مدرس</p>
+                </div>
+                <button onClick={() => setConfirmDeleteId(confirmDeleteId === inst.id ? null : inst.id)} style={{ color: DANGER }} aria-label="حذف">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+
+              <button
+                onClick={() => store.toggleInstituteStatus(inst.id, inst.status === "suspended" ? "active" : "suspended")}
+                className="w-full mt-3 rounded-lg py-2 text-xs font-semibold border"
+                style={{ borderColor: inst.status === "suspended" ? ACCENT : DANGER, color: inst.status === "suspended" ? ACCENT : DANGER }}
+              >
+                {inst.status === "suspended" ? "إعادة تفعيل المعهد" : "إيقاف المعهد مؤقتاً"}
+              </button>
+
+              {confirmDeleteId === inst.id && (
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => setConfirmDeleteId(null)} className="flex-1 rounded-lg py-2 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+                  <button
+                    onClick={() => { store.deleteInstitute(inst.id); setConfirmDeleteId(null); }}
+                    className="flex-1 rounded-lg py-2 text-xs font-semibold text-white"
+                    style={{ background: DANGER }}
+                  >
+                    حذف المعهد وكل بياناته نهائياً
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default function MasarApp() {
+  const [session, setSession] = useState(null); // null | "owner" | "institute-admin" | "student"
+  const [instituteId, setInstituteId] = useState(null);
+  const [instituteName, setInstituteName] = useState("");
+  const [loggedInStudentId, setLoggedInStudentId] = useState(null);
+  const [data, setData] = useState(null);
+  const [institutesList, setInstitutesList] = useState(null);
+  const [loading, setLoading] = useState(true); // بس أثناء التحقق الأولي من جلسة محفوظة
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const reloadInstituteData = async (id) => {
     try {
-      const savedId = window.localStorage.getItem("masar_student_id");
-      if (savedId && data.students.some((s) => s.id === savedId)) {
-        setSession("student");
-        setLoggedInStudentId(savedId);
-      } else if (savedId) {
-        window.localStorage.removeItem("masar_student_id");
-      }
+      const fresh = await fetchAll(id);
+      setData(fresh);
+      setError(null);
+      return fresh;
     } catch (e) {
-      /* localStorage unavailable — fall back to normal login each time */
+      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+      return null;
     }
-  }, [data]);
+  };
+
+  const reloadInstitutesList = async () => {
+    try {
+      const fresh = await dbFetchInstitutes();
+      setInstitutesList(fresh);
+      setError(null);
+    } catch (e) {
+      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+    }
+  };
+
+  // عند فتح التطبيق: تحقق من جلسة طالب محفوظة بس (مو إدارة/مالك، لأسباب أمنية)
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedStudentId = window.localStorage.getItem("masar_student_id");
+        const savedInstituteId = window.localStorage.getItem("masar_student_institute_id");
+        if (savedStudentId && savedInstituteId) {
+          const fresh = await fetchAll(savedInstituteId);
+          if (fresh.students.some((s) => s.id === savedStudentId)) {
+            setData(fresh);
+            setSession("student");
+            setLoggedInStudentId(savedStudentId);
+            setInstituteId(savedInstituteId);
+          } else {
+            window.localStorage.removeItem("masar_student_id");
+            window.localStorage.removeItem("masar_student_institute_id");
+          }
+        }
+      } catch (e) {
+        /* تعذر استرجاع الجلسة — يرجع لشاشة الدخول العادية */
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const withReload = (fn) => async (...args) => {
     setBusy(true);
     try {
       const result = await fn(...args);
-      await reload();
+      await reloadInstituteData(instituteId);
       return result;
     } finally {
       setBusy(false);
     }
+  };
+
+  const withOwnerReload = (fn) => async (...args) => {
+    setBusy(true);
+    try {
+      const result = await fn(...args);
+      await reloadInstitutesList();
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLogin = async (role, payload) => {
+    if (role === "owner") {
+      setSession("owner");
+      await reloadInstitutesList();
+    } else if (role === "institute-admin") {
+      setInstituteId(payload.instituteId);
+      setInstituteName(payload.instituteName);
+      await reloadInstituteData(payload.instituteId);
+      setSession("institute-admin");
+    } else if (role === "student") {
+      setInstituteId(payload.instituteId);
+      await reloadInstituteData(payload.instituteId);
+      setSession("student");
+      setLoggedInStudentId(payload.studentId);
+      try {
+        window.localStorage.setItem("masar_student_id", payload.studentId);
+        window.localStorage.setItem("masar_student_institute_id", payload.instituteId);
+      } catch (e) {}
+    }
+  };
+
+  const logout = () => {
+    setSession(null);
+    setInstituteId(null);
+    setInstituteName("");
+    setLoggedInStudentId(null);
+    setData(null);
+    setInstitutesList(null);
+    try {
+      window.localStorage.removeItem("masar_student_id");
+      window.localStorage.removeItem("masar_student_institute_id");
+    } catch (e) {}
   };
 
   if (loading) {
@@ -2790,34 +3019,52 @@ export default function MasarApp() {
     );
   }
 
-  const store = {
-    ...data,
-    addTeacher: withReload(dbAddTeacher),
-    updateTeacherName: withReload(dbUpdateTeacherName),
-    deleteTeacher: withReload(dbDeleteTeacher),
-    addGroup: withReload((teacherId) => {
-      const teacher = data.teachers.find((t) => t.id === teacherId);
-      const nextName = `M${teacher.groups.length + 1}`;
-      return dbAddGroup(teacherId, nextName);
-    }),
-    addStudent: (studentData) => {
-      const nextNumber = data.students.length + 1;
-      const serial = String(nextNumber).padStart(4, "0");
-      withReload(() => dbAddStudent(studentData, serial))();
-      return serial;
-    },
-    updateEnrollment: withReload(dbUpdateEnrollment),
-    updateStudentInfo: withReload(dbUpdateStudentInfo),
-    updateGradeResult: withReload(dbUpdateGradeResult),
-    updateAttendanceEntry: withReload(dbUpdateAttendanceEntry),
-    deleteStudent: withReload(dbDeleteStudent),
-    addAttendanceRecord: withReload(dbAddAttendanceRecord),
-    addGradeRecord: withReload(dbAddGradeRecord),
-    addInstallment: withReload(dbAddInstallment),
-    deleteInstallment: withReload(dbDeleteInstallment),
-    addNotification: withReload(dbAddNotification),
-    savePushSubscription: dbSavePushSubscription,
-  };
+  const ownerStore = institutesList
+    ? {
+        institutes: institutesList,
+        addInstitute: withOwnerReload(dbAddInstitute),
+        deleteInstitute: withOwnerReload(dbDeleteInstitute),
+        toggleInstituteStatus: withOwnerReload(dbToggleInstituteStatus),
+      }
+    : null;
+
+  const store = data
+    ? {
+        ...data,
+        instituteName,
+        addTeacher: withReload((args) => dbAddTeacher(instituteId, args)),
+        updateTeacherName: withReload(dbUpdateTeacherName),
+        deleteTeacher: withReload(dbDeleteTeacher),
+        addGroup: withReload((teacherId) => {
+          const teacher = data.teachers.find((t) => t.id === teacherId);
+          const nextName = `M${teacher.groups.length + 1}`;
+          return dbAddGroup(instituteId, teacherId, nextName);
+        }),
+        addStudent: async (studentData) => {
+          const nextNumber = data.students.length + 1;
+          const serial = String(nextNumber).padStart(4, "0");
+          await withReload(() => dbAddStudent(instituteId, studentData, serial))();
+          return serial;
+        },
+        updateEnrollment: withReload((studentId, subjectId, teacherId, groupId) =>
+          dbUpdateEnrollment(instituteId, studentId, subjectId, teacherId, groupId)
+        ),
+        updateStudentInfo: withReload(dbUpdateStudentInfo),
+        updateGradeResult: withReload((gradeRecordId, studentId, payload) =>
+          dbUpdateGradeResult(instituteId, gradeRecordId, studentId, payload)
+        ),
+        updateAttendanceEntry: withReload((attendanceRecordId, studentId, present) =>
+          dbUpdateAttendanceEntry(instituteId, attendanceRecordId, studentId, present)
+        ),
+        deleteStudent: withReload(dbDeleteStudent),
+        addAttendanceRecord: withReload((args) => dbAddAttendanceRecord(instituteId, args)),
+        addGradeRecord: withReload((args) => dbAddGradeRecord(instituteId, args)),
+        addInstallment: withReload((args) => dbAddInstallment(instituteId, args)),
+        deleteInstallment: withReload(dbDeleteInstallment),
+        addNotification: withReload((args) => dbAddNotification(instituteId, args)),
+        savePushSubscription: dbSavePushSubscription,
+      }
+    : null;
 
   return (
     <>
@@ -2827,30 +3074,31 @@ export default function MasarApp() {
           <div className="px-3 py-1.5 rounded-full text-xs text-white" style={{ background: ACCENT, fontFamily: SANS }}>جارِ الحفظ…</div>
         </div>
       )}
-      {session === "admin" && <AdminDashboard store={store} onLogout={() => setSession(null)} />}
-      {session === "student" && (
-        <StudentDashboard
-          store={store}
-          studentId={loggedInStudentId}
-          onLogout={() => {
-            setSession(null);
-            setLoggedInStudentId(null);
-            try { window.localStorage.removeItem("masar_student_id"); } catch (e) {}
-          }}
-        />
-      )}
-      {!session && (
-        <LoginScreen
-          students={data.students}
-          onLogin={(role, studentId) => {
-            setSession(role);
-            setLoggedInStudentId(studentId || null);
-            if (role === "student" && studentId) {
-              try { window.localStorage.setItem("masar_student_id", studentId); } catch (e) {}
-            }
-          }}
-        />
-      )}
+      {session === "owner" &&
+        (ownerStore ? (
+          <OwnerDashboard store={ownerStore} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {session === "institute-admin" &&
+        (store ? (
+          <AdminDashboard store={store} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {session === "student" &&
+        (store ? (
+          <StudentDashboard store={store} studentId={loggedInStudentId} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {!session && <LoginScreen onLogin={handleLogin} />}
     </>
   );
 }

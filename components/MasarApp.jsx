@@ -1031,10 +1031,13 @@ function openWhatsapp(phone, message) {
     alert("رقم ولي الأمر غير مسجل لهذا الطالب");
     return;
   }
- window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
-  }
-       
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
+}
 
+/* ============================== attendance ============================== */
+function studentsInGroup(students, subjectId, teacherId, groupId) {
+  return students.filter((s) => s.enrollments[subjectId]?.teacherId === teacherId && s.enrollments[subjectId]?.groupId === groupId);
+}
 function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
@@ -1045,32 +1048,36 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
   const [flashOn, setFlashOn] = useState(false);
   const [flashSupported, setFlashSupported] = useState(false);
   const [manualCode, setManualCode] = useState("");
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState(null); // { ok: bool, text: string }
+
   const rosterRef = React.useRef(roster);
   const presentIdsRef = React.useRef(presentIds);
   rosterRef.current = roster;
   presentIdsRef.current = presentIds;
+
   const scanStudent = (student) => {
     if (presentIdsRef.current.includes(student.id)) {
-      setFeedback({ ok: false, text: ${student.name} مسجل حاضر مسبقاً });
+      setFeedback({ ok: false, text: `${student.name} مسجل حاضر مسبقاً` });
     } else {
       onScan(student.id);
-      setFeedback({ ok: true, text: تم تسجيل ${student.name} حاضراً });
+      setFeedback({ ok: true, text: `تم تسجيل ${student.name} حاضراً` });
     }
     setManualCode("");
     setTimeout(() => setFeedback(null), 2200);
   };
+
   const handleDetectedCode = (text) => {
     if (scanLockRef.current) return;
     const code = (text || "").trim();
     if (!code) return;
     const lower = code.toLowerCase();
     const student = rosterRef.current.find((s) => s.serial.toLowerCase() === lower || s.serial.toLowerCase().endsWith(lower));
-    if (!student) return;
+    if (!student) return; // unrecognized code while scanning — ignore silently, no spam
     scanLockRef.current = true;
     scanStudent(student);
     setTimeout(() => { scanLockRef.current = false; }, 1500);
   };
+
   React.useEffect(() => {
     let active = true;
     (async () => {
@@ -1084,12 +1091,14 @@ function BarcodeScanStep({ roster, presentIds, onScan, onFinish }) {
           videoRef.current.srcObject = stream;
           try {
             await videoRef.current.play();
-          } catch (playErr) {}
+          } catch (playErr) {
+            /* some browsers need a user gesture; ignore and let element remain paused */
+          }
         }
         setCameraOn(true);
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities ? track.getCapabilities() : {};
-        setFlashSupported(Boolean(caps.torch)); 
+        setFlashSupported(Boolean(caps.torch));
 
         try {
           const reader = new BrowserMultiFormatReader();
@@ -2069,4 +2078,990 @@ function StudentHeaderEditable({ store, student }) {
     setEditing(false);
   };
 
-  if
+  if (!editing) {
+    return (
+      <>
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
+          </div>
+          <div className="flex-1">
+            <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
+            <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>الرقم التسلسلي: {student.serial}</p>
+          </div>
+          <button onClick={() => setEditing(true)} className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }} aria-label="تعديل">
+            <Pencil size={15} style={{ color: ACCENT }} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم الطالب</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.phone || "—"}</p>
+          </div>
+          <div className="p-3 rounded-xl border" style={{ borderColor: BORDER }}>
+            <p className="text-xs" style={{ color: INK_MUTED }}>رقم ولي الأمر</p>
+            <p className="text-sm mt-1" style={{ color: INK }}>{student.parentPhone || "—"}</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="mb-4 p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+      <div className="flex items-center gap-4 mb-4">
+        <label className="relative cursor-pointer">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+            {photo ? <img src={photo} alt="" className="w-full h-full object-cover" /> : <Camera size={18} style={{ color: INK_MUTED }} />}
+          </div>
+          <input type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
+        </label>
+        <p className="text-xs" style={{ color: INK_MUTED }}>اضغط الصورة لتغييرها</p>
+      </div>
+      <Field label="الاسم"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="رقم الطالب"><TextInput value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+      <Field label="رقم ولي الأمر"><TextInput value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} /></Field>
+      <div className="flex gap-2 mt-1">
+        <button onClick={() => setEditing(false)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+        <button onClick={save} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white" style={{ background: ACCENT }}>حفظ</button>
+      </div>
+    </div>
+  );
+}
+
+function ArchiveScreen({ store, onBack }) {
+  const [query, setQuery] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [subjectId, setSubjectId] = useState(null);
+  const [showCard, setShowCard] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : store.students;
+  const student = store.students.find((s) => s.id === studentId);
+
+  if (student && showCard) {
+    return <IDCardPrintScreen student={student} onBack={() => setShowCard(false)} />;
+  }
+
+  if (student && showReport) {
+    return <ReportScreen store={store} student={student} onBack={() => setShowReport(false)} />;
+  }
+
+  if (student && subjectId) {
+    const subj = getSubject(subjectId);
+    return (
+      <ScreenShell title={subj.name} onBack={() => setSubjectId(null)}>
+        <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} editable store={store} studentId={student.id} />
+      </ScreenShell>
+    );
+  }
+
+  if (student) {
+    return (
+      <ScreenShell title="ملف الطالب" onBack={() => { setStudentId(""); setConfirmDelete(false); }}>
+        <StudentHeaderEditable store={store} student={student} />
+
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setShowCard(true)}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white"
+            style={{ background: ACCENT, fontFamily: SANS }}
+          >
+            <Printer size={14} /> طباعة الهوية
+          </button>
+          <button
+            onClick={() => setShowReport(true)}
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold border"
+            style={{ borderColor: ACCENT, color: ACCENT, fontFamily: SANS }}
+          >
+            <FileDown size={14} /> تصدير تقرير
+          </button>
+        </div>
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المواد والمدرسون ({Object.keys(student.enrollments).length})</p>
+        <p className="text-xs mb-3" style={{ color: INK_MUTED }}>غيّر المدرس أو المجموعة مباشرة من هنا — التغيير ينحفظ فوراً.</p>
+        <div className="flex flex-col gap-2.5 mb-3">
+          {SUBJECTS.map((subj) => <EnrollmentEditor key={subj.id} store={store} student={student} subj={subj} />)}
+        </div>
+
+        <p className="text-xs font-semibold mb-3 mt-2" style={{ color: INK_MUTED }}>سجل الدرجات والحضور</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {SUBJECTS.filter((subj) => student.enrollments[subj.id]).map((subj) => (
+            <button key={subj.id} onClick={() => setSubjectId(subj.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <span className="text-sm" style={{ color: INK }}>{subj.name}</span>
+              <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+            </button>
+          ))}
+          {Object.keys(student.enrollments).length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>الطالب غير مسجل بأي مادة بعد.</p>}
+        </div>
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الدفعات</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {store.installments.filter((i) => i.studentId === student.id).length === 0 && (
+            <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه دفعات مسجلة لهذا الطالب.</p>
+          )}
+          {store.installments.filter((i) => i.studentId === student.id).map((h) => (
+            <div key={h.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-sm font-medium" style={{ color: INK }}>{Number(h.amountNumber).toLocaleString("ar")} د.ع</p>
+                <button onClick={() => { if (confirm("حذف هذي الدفعة؟")) store.deleteInstallment(h.id); }} style={{ color: DANGER }} aria-label="حذف">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: INK_MUTED }}>{h.date} · متبقي {h.remaining || "—"}</p>
+              {h.accountant && <p className="text-xs mt-1" style={{ color: INK_MUTED }}>المحاسب: {h.accountant}</p>}
+              {h.note && <p className="text-xs mt-1" style={{ color: INK }}>{h.note}</p>}
+            </div>
+          ))}
+        </div>
+
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold border"
+            style={{ borderColor: DANGER, color: DANGER, fontFamily: SANS }}
+          >
+            <Trash2 size={15} /> حذف الطالب
+          </button>
+        ) : (
+          <div className="rounded-xl border p-3.5" style={{ borderColor: DANGER, background: "#FBEAE8" }}>
+            <p className="text-xs mb-3" style={{ color: DANGER, fontFamily: SANS }}>هذا الإجراء يحذف الطالب نهائياً ولا يمكن التراجع عنه. متأكد؟</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-lg py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+              <button
+                onClick={() => { store.deleteStudent(student.id); setStudentId(""); setConfirmDelete(false); }}
+                className="flex-1 rounded-lg py-2.5 text-xs font-semibold text-white"
+                style={{ background: DANGER }}
+              >
+                تأكيد الحذف
+              </button>
+            </div>
+          </div>
+        )}
+      </ScreenShell>
+    );
+  }
+
+  return (
+    <ScreenShell title="أرشيف الطلاب" onBack={onBack}>
+      <div className="relative mb-5">
+        <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث بالاسم أو الرقم التسلسلي"
+          className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {results.map((s) => (
+          <button key={s.id} onClick={() => setStudentId(s.id)} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE }}>
+              {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT }}>{s.name[0]}</span>}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+            </div>
+            <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+          </button>
+        ))}
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== notifications ============================== */
+function NotificationsScreen({ store, onBack }) {
+  const [text, setText] = useState("");
+  const [targetType, setTargetType] = useState("all");
+  const [teacherId, setTeacherId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [done, setDone] = useState(false);
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+  const selectedStudent = store.students.find((s) => s.id === studentId);
+  const studentResults = studentQuery ? store.students.filter((s) => s.name.includes(studentQuery) || s.serial.includes(studentQuery)) : store.students;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    let target = { type: "all" };
+    if (targetType === "group" && teacherId && groupId) target = { type: "group", subjectId: teacher.subjectId, teacherId, groupId };
+    if (targetType === "student" && studentId) target = { type: "student", studentId };
+    store.addNotification({ text: text.trim(), target });
+    setText(""); setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+
+  return (
+    <ScreenShell title="الإشعارات" onBack={onBack}>
+      {done && <SuccessNote>تم إرسال الإشعار.</SuccessNote>}
+      <form onSubmit={submit}>
+        <Field label="نص الإشعار">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="اكتب نص التبليغ..."
+            className="w-full rounded-xl px-4 py-3 text-sm outline-none border resize-none" style={{ borderColor: BORDER, color: INK }} />
+        </Field>
+        <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>المستلمون</p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[{ id: "all", label: "الكل" }, { id: "group", label: "مجموعة معينة" }, { id: "student", label: "طالب معين" }].map((o) => (
+            <Chip key={o.id} active={targetType === o.id} onClick={() => { setTargetType(o.id); setStudentId(""); setStudentQuery(""); }} type="button">{o.label}</Chip>
+          ))}
+        </div>
+        {targetType === "group" && (
+          <>
+            <TeacherPicker teachers={store.teachers} value={teacherId} onChange={(id) => { setTeacherId(id); setGroupId(""); }} />
+            {teacher && <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />}
+          </>
+        )}
+        {targetType === "student" && (
+          <div className="mb-5">
+            {selectedStudent ? (
+              <div className="flex items-center justify-between p-3.5 rounded-2xl" style={{ background: ACCENT_SOFT }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: INK }}>{selectedStudent.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{selectedStudent.serial}</p>
+                </div>
+                <button type="button" onClick={() => setStudentId("")} className="text-xs" style={{ color: ACCENT }}>تغيير</button>
+              </div>
+            ) : (
+              <>
+                <div className="relative mb-3">
+                  <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+                  <input value={studentQuery} onChange={(e) => setStudentQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه التسلسلي"
+                    className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+                </div>
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                  {studentResults.map((s) => (
+                    <button key={s.id} type="button" onClick={() => setStudentId(s.id)} className="w-full flex items-center justify-between p-3 rounded-xl border text-right" style={{ borderColor: BORDER }}>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                        <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        <PrimaryButton type="submit" className="flex items-center justify-center gap-2"><Send size={15} />إرسال الإشعار</PrimaryButton>
+      </form>
+
+      <p className="text-xs font-semibold mt-8 mb-3" style={{ color: INK_MUTED }}>الإشعارات المرسلة</p>
+      <div className="flex flex-col gap-2.5">
+        {[...store.notifications].reverse().map((n) => {
+          let recipient = "الكل";
+          if (n.target.type === "student") {
+            const s = store.students.find((st) => st.id === n.target.studentId);
+            recipient = s ? s.name : "طالب محذوف";
+          } else if (n.target.type === "group") {
+            const t = store.teachers.find((tt) => tt.id === n.target.teacherId);
+            const g = t?.groups.find((gg) => gg.id === n.target.groupId);
+            recipient = t ? `${t.name} · ${g?.name || ""}` : "مجموعة";
+          }
+          return (
+            <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm" style={{ color: INK }}>{n.text}</p>
+              <div className="flex items-center justify-between mt-1.5">
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: ACCENT_SOFT, color: ACCENT }}>{recipient}</span>
+                <p className="text-xs" style={{ color: INK_MUTED }}>{n.date}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+/* ============================== admin dashboard root ============================== */
+/* ============================== early warning + whatsapp screens ============================== */
+function AtRiskScreen({ store, onBack }) {
+  const flags = getAtRiskStudents(store);
+  return (
+    <ScreenShell title="طلاب يحتاجون متابعة" onBack={onBack}>
+      {flags.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه طلاب متعثرين حالياً.</p>}
+      <div className="flex flex-col gap-3">
+        {flags.map((f, i) => {
+          const student = store.students.find((s) => s.id === f.studentId);
+          const subj = getSubject(f.subjectId);
+          const message = buildParentMessage(f.type, student.name, subj.name, f.score, f.fullScore);
+          return (
+            <div key={i} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#FBEAE8" }}>
+                  <AlertTriangle size={16} style={{ color: DANGER }} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: INK }}>{student.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{subj.name} · {f.detail}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => openWhatsapp(student.parentPhone, message)}
+                className="w-full flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg text-white"
+                style={{ background: "#25D366", fontFamily: SANS }}
+              >
+                <MessageCircle size={14} /> إرسال تحذير عبر واتساب
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </ScreenShell>
+  );
+}
+
+function NotifyParentScreen({ store, onBack }) {
+  const [query, setQuery] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [type, setType] = useState("absence");
+  const [subjectId, setSubjectId] = useState("");
+  const [score, setScore] = useState("");
+  const [fullScore, setFullScore] = useState("");
+
+  const student = store.students.find((s) => s.id === studentId);
+  const results = query ? store.students.filter((s) => s.name.includes(query) || s.serial.includes(query)) : store.students;
+
+  if (!studentId) {
+    return (
+      <ScreenShell title="تبليغ ولي الأمر" onBack={onBack}>
+        <div className="relative mb-5">
+          <Search size={16} style={{ color: INK_MUTED, position: "absolute", right: 14, top: 14 }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ابحث باسم الطالب أو رقمه التسلسلي"
+            className="w-full rounded-xl pr-11 pl-4 py-3 text-sm outline-none border" style={{ borderColor: BORDER, color: INK }} />
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {results.map((s) => (
+            <button key={s.id} onClick={() => setStudentId(s.id)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{s.serial}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  const enrolledSubjects = Object.keys(student.enrollments).map(getSubject);
+  const subj = subjectId ? getSubject(subjectId) : null;
+  const canSend = subj && (type === "absence" || (type === "decline" && score !== ""));
+  const message = canSend ? buildParentMessage(type, student.name, subj.name, score, fullScore) : "";
+
+  return (
+    <ScreenShell title="تبليغ ولي الأمر" onBack={() => setStudentId("")}>
+      <div className="flex items-center justify-between p-3.5 rounded-2xl mb-5" style={{ background: ACCENT_SOFT }}>
+        <div>
+          <p className="text-sm font-medium" style={{ color: INK }}>{student.name}</p>
+          <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{student.serial}</p>
+        </div>
+        <button onClick={() => setStudentId("")} className="text-xs" style={{ color: ACCENT }}>تغيير</button>
+      </div>
+
+      <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>نوع التبليغ</p>
+      <div className="flex flex-wrap gap-2 mb-5">
+        <Chip active={type === "absence"} onClick={() => setType("absence")}>تبليغ غياب</Chip>
+        <Chip active={type === "decline"} onClick={() => setType("decline")}>تبليغ تراجع مستوى</Chip>
+      </div>
+
+      <Field label="المادة">
+        <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+          <option value="">اختر المادة</option>
+          {enrolledSubjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </Select>
+      </Field>
+
+      {type === "decline" && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="الدرجة"><TextInput type="number" value={score} onChange={(e) => setScore(e.target.value)} placeholder="مثال: 12" /></Field>
+          <Field label="الدرجة الكاملة"><TextInput type="number" value={fullScore} onChange={(e) => setFullScore(e.target.value)} placeholder="مثال: 30" /></Field>
+        </div>
+      )}
+
+      {canSend && (
+        <>
+          <div className="p-3.5 rounded-2xl border mb-5 text-xs leading-6 whitespace-pre-line" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            {message}
+          </div>
+          <button
+            onClick={() => openWhatsapp(student.parentPhone, message)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white"
+            style={{ background: "#25D366", fontFamily: SANS }}
+          >
+            <MessageCircle size={15} /> فتح واتساب
+          </button>
+        </>
+      )}
+    </ScreenShell>
+  );
+}
+
+function AdminDashboard({ store, onLogout }) {
+  const [modalItem, setModalItem] = useState(null);
+  const [unlockedIds, setUnlockedIds] = useState([]);
+  const [openItemId, setOpenItemId] = useState(null);
+  const institute = { name: store.instituteName || "معهد" };
+
+  const handleItemClick = (item) => {
+    if (item.code && !unlockedIds.includes(item.id)) setModalItem(item);
+    else setOpenItemId(item.id);
+  };
+  const handleCodeSuccess = () => { setUnlockedIds((ids) => [...ids, modalItem.id]); setOpenItemId(modalItem.id); setModalItem(null); };
+  const back = () => setOpenItemId(null);
+
+  const screens = {
+    "add-teacher": <AddTeacherScreen store={store} onBack={back} />,
+    "add-group": <AddGroupScreen store={store} onBack={back} />,
+    "add-student": <AddStudentScreen store={store} onBack={back} />,
+    attendance: <AttendanceScreen store={store} onBack={back} />,
+    grades: <GradesScreen store={store} onBack={back} />,
+    installments: <InstallmentsScreen store={store} onBack={back} />,
+    archive: <ArchiveScreen store={store} onBack={back} />,
+    notifications: <NotificationsScreen store={store} onBack={back} />,
+    "notify-parent": <NotifyParentScreen store={store} onBack={back} />,
+    "at-risk": <AtRiskScreen store={store} onBack={back} />,
+    backup: <BackupScreen store={store} onBack={back} />,
+  };
+  if (openItemId) return screens[openItemId];
+
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF" }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <LogoBadge size={46} />
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{institute.name}</p>
+              <p className="text-xs" style={{ color: INK_MUTED }}>لوحة تحكم مسار</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <div className="flex gap-3">
+          <StatCard icon={Users} value={store.students.length} label="طالب مسجل" />
+          <StatCard icon={GraduationCap} value={store.teachers.length} label="مدرس" />
+          <StatCard icon={Layers} value={store.teachers.reduce((n, t) => n + t.groups.length, 0)} label="مجموعة" />
+        </div>
+      </header>
+      <main className="px-5" style={{ fontFamily: SANS }}>
+        {(() => {
+          const atRisk = getAtRiskStudents(store);
+          const uniqueCount = new Set(atRisk.map((f) => f.studentId)).size;
+          if (uniqueCount === 0) return null;
+          return (
+            <button
+              onClick={() => setOpenItemId("at-risk")}
+              className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl mb-6 text-right"
+              style={{ background: "#FBEAE8", border: `1px solid ${DANGER}` }}
+            >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+                <AlertTriangle size={19} style={{ color: DANGER }} />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold" style={{ color: DANGER }}>{uniqueCount} طالب يحتاج متابعة</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>غياب متكرر أو تراجع بالدرجات</p>
+              </div>
+              <ChevronLeft size={16} style={{ color: DANGER }} />
+            </button>
+          );
+        })()}
+        <div className="mb-2">
+          <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المهام اليومية</p>
+          <div className="flex flex-col gap-2.5">{DAILY_ITEMS.map((item) => <ItemRow key={item.id} item={item} locked={false} onClick={() => handleItemClick(item)} />)}</div>
+        </div>
+        <div className="my-6"><PathDivider /></div>
+        <div>
+          <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الإدارة</p>
+          <div className="flex flex-col gap-2.5">{MANAGEMENT_ITEMS.map((item) => <ItemRow key={item.id} item={item} locked={!unlockedIds.includes(item.id)} onClick={() => handleItemClick(item)} />)}</div>
+        </div>
+      </main>
+      {modalItem && <CodeModal item={modalItem} onClose={() => setModalItem(null)} onSuccess={handleCodeSuccess} />}
+    </div>
+  );
+}
+
+/* ============================== student view ============================== */
+function StudentSubjectDetail({ store, student, subjectId, onBack }) {
+  const subj = getSubject(subjectId);
+  const enrollment = student.enrollments[subjectId];
+  const teacher = store.teachers.find((t) => t.id === enrollment.teacherId);
+  const group = teacher.groups.find((g) => g.id === enrollment.groupId);
+  return (
+    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-6" style={{ color: ACCENT }}><ChevronLeft size={16} />موادي</button>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: ACCENT_SOFT }}><subj.icon size={21} style={{ color: ACCENT }} /></div>
+        <div>
+          <h2 className="text-lg" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{subj.name}</h2>
+          <p className="text-xs" style={{ color: INK_MUTED }}>{teacher.name} · {group.name}</p>
+        </div>
+      </div>
+      <SubjectRecordView subject={subj} records={studentSubjectRecords(store, student, subjectId)} />
+    </div>
+  );
+}
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function StudentDashboard({ store, studentId, onLogout }) {
+  const [openSubject, setOpenSubject] = useState(null);
+  const [pushStatus, setPushStatus] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  const student = store.students.find((s) => s.id === studentId) || store.students[0];
+
+  const [pushError, setPushError] = useState(null);
+  const enablePush = async () => {
+    setPushError(null);
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setPushStatus("unsupported");
+        return;
+      }
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      setPushStatus(permission);
+      if (permission !== "granted") return;
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) throw new Error("NEXT_PUBLIC_VAPID_PUBLIC_KEY غير موجود بالبناء الحالي");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        }));
+      await store.savePushSubscription(student.id, subscription.toJSON());
+    } catch (e) {
+      console.error("enablePush failed:", e);
+      setPushError((e && e.message) || String(e));
+    }
+  };
+
+  React.useEffect(() => {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted" && student) {
+      enablePush();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student?.id]);
+
+  if (!student) {
+    return (
+      <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center px-5 text-center" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+        <p className="text-sm" style={{ color: INK_MUTED }}>ما فيه طلاب مسجلين بعد. سجل دخول كإدارة وأضف طالب أول.</p>
+        <button onClick={onLogout} className="mt-4 text-sm" style={{ color: ACCENT }}>رجوع</button>
+      </div>
+    );
+  }
+  if (openSubject) return <StudentSubjectDetail store={store} student={student} subjectId={openSubject} onBack={() => setOpenSubject(null)} />;
+
+  const myNotifications = store.notifications.filter((n) => {
+    if (n.target.type === "all") return true;
+    if (n.target.type === "student") return n.target.studentId === student.id;
+    if (n.target.type === "group") return student.enrollments[n.target.subjectId]?.teacherId === n.target.teacherId && student.enrollments[n.target.subjectId]?.groupId === n.target.groupId;
+    return false;
+  });
+
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF" }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0" style={{ background: SURFACE, border: `1px solid ${BORDER}` }}>
+              {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" /> : <span style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT, fontSize: 20 }}>{student.name[0]}</span>}
+            </div>
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>{student.name}</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED, fontFamily: SANS }}>{student.serial}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <div style={{ fontFamily: SANS }}><PathDivider /></div>
+      </header>
+      <main className="px-5" style={{ fontFamily: SANS }}>
+        {pushStatus !== "unsupported" && pushStatus !== "granted" && (
+          <button
+            onClick={enablePush}
+            className="w-full flex items-center gap-3 p-3.5 rounded-2xl mb-2 text-right"
+            style={{ background: ACCENT_SOFT }}
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff" }}>
+              <Bell size={18} style={{ color: ACCENT }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold" style={{ color: ACCENT }}>فعّل إشعارات الموبايل</p>
+              <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>خل درجاتك وحضورك توصلك مباشرة لجهازك</p>
+            </div>
+          </button>
+        )}
+        {pushError && (
+          <div className="p-3.5 rounded-2xl mb-4" style={{ background: "#FBEAE8" }}>
+            <p className="text-xs" style={{ color: DANGER }}>تعذر تفعيل الإشعارات: {pushError}</p>
+            <button onClick={enablePush} className="text-xs mt-1.5 font-semibold" style={{ color: ACCENT }}>إعادة المحاولة</button>
+          </div>
+        )}
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>موادي</p>
+        <div className="flex flex-col gap-2.5 mb-8">
+          {SUBJECTS.map((s) => {
+            const enrollment = student.enrollments[s.id];
+            const teacher = enrollment && store.teachers.find((t) => t.id === enrollment.teacherId);
+            const group = teacher?.groups.find((g) => g.id === enrollment?.groupId);
+            const Icon = s.icon;
+            return (
+              <button key={s.id} disabled={!enrollment} onClick={() => setOpenSubject(s.id)} className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl border text-right disabled:opacity-45" style={{ borderColor: BORDER }}>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: SURFACE }}><Icon size={19} style={{ color: ACCENT }} /></div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: INK }}>{s.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{enrollment ? `${teacher.name} · ${group?.name}` : "غير مسجل"}</p>
+                </div>
+                {enrollment && <ChevronLeft size={16} style={{ color: INK_MUTED }} />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الإشعارات</p>
+        <div className="flex flex-col gap-2.5">
+          {myNotifications.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه إشعارات حالياً.</p>}
+          {[...myNotifications].reverse().map((n) => (
+            <div key={n.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <p className="text-sm" style={{ color: INK }}>{n.text}</p>
+              <p className="text-xs mt-1.5" style={{ color: INK_MUTED }}>{n.date}</p>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ============================== root (Supabase-backed) ============================== */
+function OwnerDashboard({ store, onLogout }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submitAdd = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await store.addInstitute({ name: name.trim(), adminUsername: adminUsername.trim(), adminPassword: adminPassword.trim() });
+      setName(""); setAdminUsername(""); setAdminPassword("");
+      setShowAdd(false);
+    } catch (e2) {
+      setError(e2.message?.includes("duplicate") ? "اسم المستخدم هذا مستخدم أصلاً لمعهد ثاني" : "تعذر إضافة المعهد");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div dir="rtl" className="min-h-screen pb-10" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+      <header className="px-5 pt-6 pb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <LogoBadge size={46} />
+            <div>
+              <p className="text-base" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK }}>لوحة المالك</p>
+              <p className="text-xs" style={{ color: INK_MUTED }}>كل المعاهد بمسار</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border" style={{ borderColor: BORDER, color: INK_MUTED, fontFamily: SANS }}>
+            <LogOut size={14} />خروج
+          </button>
+        </div>
+        <StatCard icon={Users} value={store.institutes.length} label="معهد مسجل" />
+      </header>
+
+      <main className="px-5">
+        {!showAdd ? (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-6 text-sm font-semibold text-white"
+            style={{ background: ACCENT }}
+          >
+            <Plus size={16} /> إضافة معهد جديد
+          </button>
+        ) : (
+          <form onSubmit={submitAdd} className="mb-6 p-4 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <p className="text-sm font-semibold mb-3" style={{ color: INK }}>معهد جديد</p>
+            <Field label="اسم المعهد"><TextInput value={name} onChange={(e) => setName(e.target.value)} required /></Field>
+            <Field label="يوزر إدارة المعهد"><TextInput value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} required /></Field>
+            <Field label="باسورد إدارة المعهد"><TextInput value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} required /></Field>
+            {error && <p className="text-xs mb-3" style={{ color: DANGER }}>{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowAdd(false)} className="flex-1 rounded-xl py-2.5 text-sm font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+              <button type="submit" disabled={busy} className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-40" style={{ background: ACCENT }}>
+                {busy ? "جارِ الإضافة…" : "إضافة"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المعاهد</p>
+        <div className="flex flex-col gap-2.5">
+          {store.institutes.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه معاهد مسجلة بعد.</p>}
+          {store.institutes.map((inst) => (
+            <div key={inst.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: INK }}>{inst.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>يوزر الإدارة: {inst.adminUsername}</p>
+                </div>
+                <button onClick={() => setConfirmDeleteId(confirmDeleteId === inst.id ? null : inst.id)} style={{ color: DANGER }} aria-label="حذف">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {confirmDeleteId === inst.id && (
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => setConfirmDeleteId(null)} className="flex-1 rounded-lg py-2 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>إلغاء</button>
+                  <button
+                    onClick={() => { store.deleteInstitute(inst.id); setConfirmDeleteId(null); }}
+                    className="flex-1 rounded-lg py-2 text-xs font-semibold text-white"
+                    style={{ background: DANGER }}
+                  >
+                    حذف المعهد وكل بياناته نهائياً
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default function MasarApp() {
+  const [session, setSession] = useState(null); // null | "owner" | "institute-admin" | "student"
+  const [instituteId, setInstituteId] = useState(null);
+  const [instituteName, setInstituteName] = useState("");
+  const [loggedInStudentId, setLoggedInStudentId] = useState(null);
+  const [data, setData] = useState(null);
+  const [institutesList, setInstitutesList] = useState(null);
+  const [loading, setLoading] = useState(true); // بس أثناء التحقق الأولي من جلسة محفوظة
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const reloadInstituteData = async (id) => {
+    try {
+      const fresh = await fetchAll(id);
+      setData(fresh);
+      setError(null);
+      return fresh;
+    } catch (e) {
+      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+      return null;
+    }
+  };
+
+  const reloadInstitutesList = async () => {
+    try {
+      const fresh = await dbFetchInstitutes();
+      setInstitutesList(fresh);
+      setError(null);
+    } catch (e) {
+      setError(e.message || "تعذر الاتصال بقاعدة البيانات");
+    }
+  };
+
+  // عند فتح التطبيق: تحقق من جلسة طالب محفوظة بس (مو إدارة/مالك، لأسباب أمنية)
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedStudentId = window.localStorage.getItem("masar_student_id");
+        const savedInstituteId = window.localStorage.getItem("masar_student_institute_id");
+        if (savedStudentId && savedInstituteId) {
+          const fresh = await fetchAll(savedInstituteId);
+          if (fresh.students.some((s) => s.id === savedStudentId)) {
+            setData(fresh);
+            setSession("student");
+            setLoggedInStudentId(savedStudentId);
+            setInstituteId(savedInstituteId);
+          } else {
+            window.localStorage.removeItem("masar_student_id");
+            window.localStorage.removeItem("masar_student_institute_id");
+          }
+        }
+      } catch (e) {
+        /* تعذر استرجاع الجلسة — يرجع لشاشة الدخول العادية */
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const withReload = (fn) => async (...args) => {
+    setBusy(true);
+    try {
+      const result = await fn(...args);
+      await reloadInstituteData(instituteId);
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withOwnerReload = (fn) => async (...args) => {
+    setBusy(true);
+    try {
+      const result = await fn(...args);
+      await reloadInstitutesList();
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLogin = async (role, payload) => {
+    if (role === "owner") {
+      setSession("owner");
+      await reloadInstitutesList();
+    } else if (role === "institute-admin") {
+      setInstituteId(payload.instituteId);
+      setInstituteName(payload.instituteName);
+      await reloadInstituteData(payload.instituteId);
+      setSession("institute-admin");
+    } else if (role === "student") {
+      setInstituteId(payload.instituteId);
+      await reloadInstituteData(payload.instituteId);
+      setSession("student");
+      setLoggedInStudentId(payload.studentId);
+      try {
+        window.localStorage.setItem("masar_student_id", payload.studentId);
+        window.localStorage.setItem("masar_student_institute_id", payload.instituteId);
+      } catch (e) {}
+    }
+  };
+
+  const logout = () => {
+    setSession(null);
+    setInstituteId(null);
+    setInstituteName("");
+    setLoggedInStudentId(null);
+    setData(null);
+    setInstitutesList(null);
+    try {
+      window.localStorage.removeItem("masar_student_id");
+      window.localStorage.removeItem("masar_student_institute_id");
+    } catch (e) {}
+  };
+
+  if (loading) {
+    return (
+      <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+        <style>{FONT_IMPORT}</style>
+        <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div dir="rtl" className="min-h-screen flex flex-col items-center justify-center px-6 text-center gap-2" style={{ background: "#FFFFFF" }}>
+        <style>{FONT_IMPORT}</style>
+        <p className="text-sm font-semibold" style={{ color: DANGER, fontFamily: SANS }}>تعذر الاتصال بقاعدة البيانات</p>
+        <p className="text-xs" style={{ color: INK_MUTED, fontFamily: SANS }}>{error}</p>
+      </div>
+    );
+  }
+
+  const ownerStore = institutesList
+    ? {
+        institutes: institutesList,
+        addInstitute: withOwnerReload(dbAddInstitute),
+        deleteInstitute: withOwnerReload(dbDeleteInstitute),
+      }
+    : null;
+
+  const store = data
+    ? {
+        ...data,
+        instituteName,
+        addTeacher: withReload((args) => dbAddTeacher(instituteId, args)),
+        updateTeacherName: withReload(dbUpdateTeacherName),
+        deleteTeacher: withReload(dbDeleteTeacher),
+        addGroup: withReload((teacherId) => {
+          const teacher = data.teachers.find((t) => t.id === teacherId);
+          const nextName = `M${teacher.groups.length + 1}`;
+          return dbAddGroup(instituteId, teacherId, nextName);
+        }),
+        addStudent: (studentData) => {
+          const nextNumber = data.students.length + 1;
+          const serial = String(nextNumber).padStart(4, "0");
+          withReload(() => dbAddStudent(instituteId, studentData, serial))();
+          return serial;
+        },
+        updateEnrollment: withReload((studentId, subjectId, teacherId, groupId) =>
+          dbUpdateEnrollment(instituteId, studentId, subjectId, teacherId, groupId)
+        ),
+        updateStudentInfo: withReload(dbUpdateStudentInfo),
+        updateGradeResult: withReload((gradeRecordId, studentId, payload) =>
+          dbUpdateGradeResult(instituteId, gradeRecordId, studentId, payload)
+        ),
+        updateAttendanceEntry: withReload((attendanceRecordId, studentId, present) =>
+          dbUpdateAttendanceEntry(instituteId, attendanceRecordId, studentId, present)
+        ),
+        deleteStudent: withReload(dbDeleteStudent),
+        addAttendanceRecord: withReload((args) => dbAddAttendanceRecord(instituteId, args)),
+        addGradeRecord: withReload((args) => dbAddGradeRecord(instituteId, args)),
+        addInstallment: withReload((args) => dbAddInstallment(instituteId, args)),
+        deleteInstallment: withReload(dbDeleteInstallment),
+        addNotification: withReload((args) => dbAddNotification(instituteId, args)),
+        savePushSubscription: dbSavePushSubscription,
+      }
+    : null;
+
+  return (
+    <>
+      <style>{FONT_IMPORT}</style>
+      {busy && (
+        <div className="fixed top-3 inset-x-0 flex justify-center z-50 pointer-events-none">
+          <div className="px-3 py-1.5 rounded-full text-xs text-white" style={{ background: ACCENT, fontFamily: SANS }}>جارِ الحفظ…</div>
+        </div>
+      )}
+      {session === "owner" &&
+        (ownerStore ? (
+          <OwnerDashboard store={ownerStore} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {session === "institute-admin" &&
+        (store ? (
+          <AdminDashboard store={store} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {session === "student" &&
+        (store ? (
+          <StudentDashboard store={store} studentId={loggedInStudentId} onLogout={logout} />
+        ) : (
+          <div dir="rtl" className="min-h-screen flex items-center justify-center" style={{ background: "#FFFFFF" }}>
+            <p className="text-sm" style={{ color: INK_MUTED, fontFamily: SANS }}>جارِ التحميل…</p>
+          </div>
+        ))}
+      {!session && <LoginScreen onLogin={handleLogin} />}
+    </>
+  );
+}

@@ -854,6 +854,8 @@ function AddStudentScreen({ store, onBack }) {
   const [enroll, setEnroll] = useState({});
   const [done, setDone] = useState(null);
   const [showCard, setShowCard] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
@@ -868,16 +870,29 @@ function AddStudentScreen({ store, onBack }) {
     setEnroll((prev) => ({ ...prev, [subjectId]: { ...prev[subjectId], groupId } }));
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !username.trim() || !password.trim()) return;
+    setSubmitError("");
+    setSubmitting(true);
     const enrollments = {};
     Object.entries(enroll).forEach(([subjectId, v]) => {
       if (v && v.teacherId && v.groupId) enrollments[subjectId] = v;
     });
-    const serial = store.addStudent({ name: name.trim(), phone, parentPhone, photo, username: username.trim(), password: password.trim(), enrollments });
-    setDone(serial);
-    setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
+    try {
+      const serial = await store.addStudent({ name: name.trim(), phone, parentPhone, photo, username: username.trim(), password: password.trim(), enrollments });
+      setDone(serial);
+      setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
+    } catch (err) {
+      const msg = (err && err.message) || "";
+      if (msg.includes("duplicate") || msg.includes("unique")) {
+        setSubmitError("اسم المستخدم هذا مستخدم أصلاً — جرب اسم مستخدم ثاني");
+      } else {
+        setSubmitError("تعذر حفظ الطالب — حاول مرة ثانية");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const newStudent = done ? store.students.find((s) => s.serial === done) : null;
@@ -946,7 +961,8 @@ function AddStudentScreen({ store, onBack }) {
         <Field label="اسم المستخدم"><TextInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="اسم مستخدم الطالب" required /></Field>
         <Field label="كلمة المرور"><TextInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="كلمة مرور الطالب" required /></Field>
 
-        <PrimaryButton type="submit">حفظ الطالب</PrimaryButton>
+        {submitError && <p className="text-xs mb-3" style={{ color: DANGER }}>{submitError}</p>}
+        <PrimaryButton type="submit" disabled={submitting}>{submitting ? "جارِ الحفظ…" : "حفظ الطالب"}</PrimaryButton>
       </form>
     </ScreenShell>
   );
@@ -3003,10 +3019,10 @@ export default function MasarApp() {
           const nextName = `M${teacher.groups.length + 1}`;
           return dbAddGroup(instituteId, teacherId, nextName);
         }),
-        addStudent: (studentData) => {
+        addStudent: async (studentData) => {
           const nextNumber = data.students.length + 1;
           const serial = String(nextNumber).padStart(4, "0");
-          withReload(() => dbAddStudent(instituteId, studentData, serial))();
+          await withReload(() => dbAddStudent(instituteId, studentData, serial))();
           return serial;
         },
         updateEnrollment: withReload((studentId, subjectId, teacherId, groupId) =>

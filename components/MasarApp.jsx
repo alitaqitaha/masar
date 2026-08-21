@@ -1031,8 +1031,9 @@ function openWhatsapp(phone, message) {
     alert("رقم ولي الأمر غير مسجل لهذا الطالب");
     return;
   }
-  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_ {};
-        setFlashSupported(Boolean(caps.torch));
+ window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, "_blank");
+  }
+        
 
         try {
           const reader = new BrowserMultiFormatReader();

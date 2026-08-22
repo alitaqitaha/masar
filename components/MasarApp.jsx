@@ -23,14 +23,11 @@ import {
   updateGradeResult as dbUpdateGradeResult,
   updateAttendanceEntry as dbUpdateAttendanceEntry,
   deleteStudent as dbDeleteStudent,
-  loginInstituteAdmin as dbLoginInstituteAdmin,
-  loginStudent as dbLoginStudent,
+  loginUnified as dbLoginUnified,
   fetchInstitutes as dbFetchInstitutes,
   addInstitute as dbAddInstitute,
   deleteInstitute as dbDeleteInstitute,
   toggleInstituteStatus as dbToggleInstituteStatus,
-  OWNER_USERNAME,
-  OWNER_PASSWORD,
 } from "../lib/data";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { QRCodeSVG } from "qrcode.react";
@@ -296,20 +293,20 @@ function LoginScreen({ onLogin }) {
     setSubmitting(true);
     try {
       if (role === "admin") {
-        if (u === OWNER_USERNAME && p === OWNER_PASSWORD) {
+        const result = await dbLoginUnified("admin", u, p);
+        if (result && result.role === "owner") {
           await onLogin("owner", null);
           return;
         }
-        const institute = await dbLoginInstituteAdmin(u, p);
-        if (institute) {
-          await onLogin("institute-admin", { instituteId: institute.id, instituteName: institute.name, logoUrl: institute.logoUrl });
+        if (result && result.role === "institute-admin") {
+          await onLogin("institute-admin", { instituteId: result.instituteId, instituteName: result.instituteName, logoUrl: result.logoUrl });
           return;
         }
         setError("اسم المستخدم أو كلمة المرور غير صحيحة");
       } else {
-        const match = await dbLoginStudent(u, p);
-        if (match) {
-          await onLogin("student", { studentId: match.id, instituteId: match.institute_id });
+        const result = await dbLoginUnified("student", u, p);
+        if (result && result.role === "student") {
+          await onLogin("student", { studentId: result.studentId, instituteId: result.instituteId });
           return;
         }
         setError("اسم المستخدم أو كلمة المرور غير صحيحة");

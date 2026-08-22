@@ -482,6 +482,7 @@ function TeacherAttendanceLogScreen({ store, teacher, onBack }) {
         time={formatTime(openRecord.createdAt)}
         students={students}
         presentIds={openRecord.presentIds}
+        instituteName={store.instituteName}
         onBack={() => setOpenRecordId(null)}
       />
     );
@@ -531,6 +532,7 @@ function TeacherExamLogScreen({ store, teacher, onBack }) {
         fullScore={openRecord.fullScore}
         roster={roster}
         results={openRecord.results}
+        instituteName={store.instituteName}
         onBack={() => setOpenRecordId(null)}
       />
     );
@@ -754,7 +756,7 @@ function IDField({ icon: Icon, label, value }) {
   );
 }
 
-function IDCardPrintScreen({ student, onBack }) {
+function IDCardPrintScreen({ student, instituteName, onBack }) {
   return (
     <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
@@ -786,7 +788,7 @@ function IDCardPrintScreen({ student, onBack }) {
           {/* header */}
           <div className="flex items-center gap-1.5 px-2" style={{ height: "8mm", background: ACCENT }} dir="rtl">
             <MasarMark size={14} on="dark" />
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: "3.2mm", whiteSpace: "nowrap" }}>معهد العلوم التعليمي</p>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: "3.2mm", whiteSpace: "nowrap" }}>{instituteName || "معهد"}</p>
           </div>
 
           {/* body */}
@@ -827,7 +829,7 @@ function IDCardPrintScreen({ student, onBack }) {
           {/* footer */}
           <div className="flex items-center justify-center px-2" style={{ height: "12mm", background: ACCENT }}>
             <p style={{ fontSize: "2.3mm", color: "rgba(255,255,255,0.9)", textAlign: "center", lineHeight: 1.3 }}>
-              هذه البطاقة وثيقة رسمية ملك لمعهد العلوم التعليمي ويجب إبرازها عند الطلب
+              هذه البطاقة وثيقة رسمية ملك لـ{instituteName || "المعهد"} ويجب إبرازها عند الطلب
             </p>
           </div>
         </div>
@@ -903,7 +905,7 @@ function AddStudentScreen({ store, onBack }) {
   const newStudent = done ? store.students.find((s) => s.serial === done) : null;
 
   if (showCard && newStudent) {
-    return <IDCardPrintScreen student={newStudent} onBack={() => setShowCard(false)} />;
+    return <IDCardPrintScreen student={newStudent} instituteName={store.instituteName} onBack={() => setShowCard(false)} />;
   }
 
   return (
@@ -1016,25 +1018,26 @@ function getAtRiskStudents(store) {
   return flags;
 }
 
-function buildParentMessage(type, studentName, subjectName, score, fullScore) {
+function buildParentMessage(type, studentName, subjectName, score, fullScore, instituteName) {
+  const inst = instituteName || "المعهد";
   if (type === "absence") {
     return `السلام عليكم أستاذي
 
-نود إعلامكم من إدارة معهد العلوم التعليمي بأن الطالب ${studentName} لم يحضر اليوم إلى محاضرة ${subjectName}.
+نود إعلامكم من إدارة ${inst} بأن الطالب ${studentName} لم يحضر اليوم إلى محاضرة ${subjectName}.
 
 نرجو منكم التفضل بالاطلاع على سبب الغياب، ومتابعة التزام الطالب بالمحاضرات حرصاً على مستواه الدراسي.
 
 مع التقدير والاحترام
-إدارة معهد العلوم التعليمي`;
+إدارة ${inst}`;
   }
   return `السلام عليكم أستاذي
 
-نود إعلامكم من إدارة معهد العلوم التعليمي بأن نتائج الطالب ${studentName} بمادة ${subjectName} شهدت تراجعاً، حيث حصل على درجة ${score}${fullScore ? `/${fullScore}` : ""} بآخر امتحان.
+نود إعلامكم من إدارة ${inst} بأن نتائج الطالب ${studentName} بمادة ${subjectName} شهدت تراجعاً، حيث حصل على درجة ${score}${fullScore ? `/${fullScore}` : ""} بآخر امتحان.
 
 نرجو منكم متابعة الطالب ومساعدته لتجاوز هذه المرحلة حرصاً على مستواه الدراسي.
 
 مع التقدير والاحترام
-إدارة معهد العلوم التعليمي`;
+إدارة ${inst}`;
 }
 
 function normalizePhone(phone) {
@@ -1310,7 +1313,7 @@ function AttendanceScreen({ store, onBack }) {
 }
 
 /* ============================== grades ============================== */
-function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName, examType, date, time, fullScore, roster, results, onBack }) {
+function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName, examType, date, time, fullScore, roster, results, instituteName, onBack }) {
   const rows = roster.map((s) => ({ student: s, r: results[s.id] }));
 
   const shareText = [
@@ -1339,7 +1342,7 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
         <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
           <LogoBadge size={36} />
           <div>
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>{instituteName || "مسار"}</p>
             <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>نتائج امتحان · نظام مسار</p>
           </div>
         </div>
@@ -1380,7 +1383,7 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
   );
 }
 
-function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, date, time, students, presentIds, onBack }) {
+function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, date, time, students, presentIds, instituteName, onBack }) {
   const rows = students.map((s) => ({ student: s, present: presentIds.includes(s.id) }));
   const presentCount = rows.filter((r) => r.present).length;
 
@@ -1410,7 +1413,7 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
         <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
           <LogoBadge size={36} />
           <div>
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>{instituteName || "مسار"}</p>
             <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>تقرير حضور · نظام مسار</p>
           </div>
         </div>
@@ -1497,6 +1500,7 @@ function GradesScreen({ store, onBack }) {
           fullScore={fullScore}
           roster={roster}
           results={results}
+          instituteName={store.instituteName}
           onBack={() => setShowShare(false)}
         />
       );
@@ -1942,7 +1946,7 @@ function ReportScreen({ store, student, onBack }) {
   const presentCount = attendance.filter((r) => r.presentIds.includes(student.id)).length;
   const absentCount = attendance.length - presentCount;
 
-  const shareText = `تقرير أداء ${student.name} — ${subj.name} — ${month}\nمعهد العلوم · نظام مسار`;
+  const shareText = `تقرير أداء ${student.name} — ${subj.name} — ${month}\n${store.instituteName || "مسار"} · نظام مسار`;
   const handleShare = async () => {
     if (navigator.share) {
       try { await navigator.share({ title: "تقرير أداء الطالب", text: shareText }); } catch (e) {}
@@ -1966,7 +1970,7 @@ function ReportScreen({ store, student, onBack }) {
         <div className="flex items-center gap-3 px-5 py-4" style={{ background: ACCENT }}>
           <LogoBadge size={36} />
           <div>
-            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>معهد العلوم</p>
+            <p style={{ fontFamily: DISPLAY, fontWeight: 800, color: "#fff", fontSize: 15 }}>{store.instituteName || "مسار"}</p>
             <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}>تقرير أداء الطالب · نظام مسار</p>
           </div>
         </div>
@@ -2163,7 +2167,7 @@ function ArchiveScreen({ store, onBack }) {
   const student = store.students.find((s) => s.id === studentId);
 
   if (student && showCard) {
-    return <IDCardPrintScreen student={student} onBack={() => setShowCard(false)} />;
+    return <IDCardPrintScreen student={student} instituteName={store.instituteName} onBack={() => setShowCard(false)} />;
   }
 
   if (student && showReport) {
@@ -2406,7 +2410,7 @@ function AtRiskScreen({ store, onBack }) {
         {flags.map((f, i) => {
           const student = store.students.find((s) => s.id === f.studentId);
           const subj = getSubject(f.subjectId);
-          const message = buildParentMessage(f.type, student.name, subj.name, f.score, f.fullScore);
+          const message = buildParentMessage(f.type, student.name, subj.name, f.score, f.fullScore, store.instituteName);
           return (
             <div key={i} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
               <div className="flex items-center gap-3 mb-3">
@@ -2469,7 +2473,7 @@ function NotifyParentScreen({ store, onBack }) {
   const enrolledSubjects = Object.keys(student.enrollments).map(getSubject);
   const subj = subjectId ? getSubject(subjectId) : null;
   const canSend = subj && (type === "absence" || (type === "decline" && score !== ""));
-  const message = canSend ? buildParentMessage(type, student.name, subj.name, score, fullScore) : "";
+  const message = canSend ? buildParentMessage(type, student.name, subj.name, score, fullScore, store.instituteName) : "";
 
   return (
     <ScreenShell title="تبليغ ولي الأمر" onBack={() => setStudentId("")}>

@@ -952,7 +952,12 @@ function ConversationThreadScreen({ title, onBack, fetchMessages, onSend, selfSe
   const [sending, setSending] = useState(false);
 
   const reload = () => fetchMessages().then(setMessages);
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    const interval = setInterval(reload, 4000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -3487,7 +3492,7 @@ function AdminDashboard({ store, onLogout }) {
     grades: <GradesScreen store={store} onBack={back} />,
     installments: <InstallmentsScreen store={store} onBack={back} />,
     exams: <ExamsAdminScreen store={store} onBack={back} />,
-    "teacher-messages": <TeacherMessagesAdminScreen store={store} onBack={back} />,
+    "teacher-messages": <TeacherMessagesAdminScreen store={store} onBack={back} />
     archive: <ArchiveScreen store={store} onBack={back} />,
     notifications: <NotificationsScreen store={store} onBack={back} />,
     "notify-parent": <NotifyParentScreen store={store} onBack={back} />,

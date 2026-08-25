@@ -1215,6 +1215,27 @@ function TeacherExamLogScreen({ store, teacher, onBack }) {
   );
 }
 
+function TeacherAccessCodeCard({ teacher }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = () => {
+    const link = `${window.location.origin}${window.location.pathname}?tcode=${teacher.accessCode}`;
+    navigator.clipboard?.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="p-3.5 rounded-2xl mb-6" style={{ background: ACCENT_SOFT }}>
+      <p className="text-xs mb-2" style={{ color: ACCENT }}>رابط دخول خاص بهذا المدرس (لأسئلة الطلاب والامتحانات) — يدخله مرة وحدة ويضل مسجل بجهازه</p>
+      <button onClick={copyLink} className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold text-white" style={{ background: ACCENT }}>
+        {copied ? "تم النسخ ✓" : "نسخ رابط الدخول"}
+      </button>
+    </div>
+  );
+}
+
 function TeacherDetailScreen({ store, teacher, onBack, onDeleted }) {
   const subj = getSubject(teacher.subjectId);
   const [editing, setEditing] = useState(false);
@@ -1252,6 +1273,8 @@ function TeacherDetailScreen({ store, teacher, onBack, onDeleted }) {
           </button>
         </div>
       )}
+
+      <TeacherAccessCodeCard teacher={teacher} />
 
       <div className="flex gap-2 mb-6">
         <button onClick={() => setOpenLog("attendance")} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold border" style={{ borderColor: BORDER, color: INK }}>

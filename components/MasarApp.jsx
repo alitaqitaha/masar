@@ -36,6 +36,7 @@ import {
   fetchPhotoExamSubmissions as dbFetchPhotoExamSubmissions,
   uploadCorrectedPhoto as dbUploadCorrectedPhoto,
   loginTeacherByCode as dbLoginTeacherByCode,
+  fetchGroupsForTeacher as dbFetchGroupsForTeacher,
   fetchTeacherConversations as dbFetchTeacherConversations,
   fetchAllTeacherMessages as dbFetchAllTeacherMessages,
   fetchConversation as dbFetchConversation,
@@ -170,8 +171,6 @@ const MANAGEMENT_ITEMS = [
   { id: "add-student", label: "إضافة طالب", icon: UserPlus, code: true },
   { id: "add-teacher", label: "إضافة مدرس", icon: GraduationCap, code: true },
   { id: "add-group", label: "إضافة مجموعة", icon: UsersRound, code: true },
-  { id: "exams", label: "الامتحانات", icon: ListChecks, code: true },
-  { id: "teacher-messages", label: "أسئلة الطلاب", icon: MessageCircle, code: true },
   { id: "installments", label: "الأقساط", icon: Wallet, code: true },
   { id: "archive", label: "أرشيف الطلاب", icon: Archive, code: true },
   { id: "backup", label: "نسخة احتياطية", icon: Download, code: true },
@@ -538,18 +537,20 @@ function GroupPicker({ groups, value, onChange }) {
 
 /* ============================== add teacher ============================== */
 /* ============================== امتحانات MCQ (إدارة) ============================== */
-function ExamsAdminScreen({ store, onBack }) {
-  const [teacherId, setTeacherId] = useState("");
+function TeacherExamsScreen({ instituteId, teacherId, subjectId }) {
   const [groupId, setGroupId] = useState("");
+  const [groups, setGroups] = useState(null);
   const [exams, setExams] = useState(null);
   const [openExam, setOpenExam] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  const teacher = store.teachers.find((t) => t.id === teacherId);
+  useEffect(() => {
+    dbFetchGroupsForTeacher(teacherId).then(setGroups);
+  }, [teacherId]);
 
   const reload = () => {
     setExams(null);
-    Promise.all([dbFetchMcqExams(store.instituteId), dbFetchPhotoExams(store.instituteId)]).then(([mcq, photo]) => {
+    Promise.all([dbFetchMcqExams(instituteId), dbFetchPhotoExams(instituteId)]).then(([mcq, photo]) => {
       const merged = [
         ...mcq.map((e) => ({ ...e, type: "mcq" })),
         ...photo.map((e) => ({ ...e, type: "photo" })),
@@ -561,32 +562,28 @@ function ExamsAdminScreen({ store, onBack }) {
   };
 
   useEffect(() => {
-    if (!teacherId || !groupId) return;
+    if (!groupId) return;
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teacherId, groupId, store.instituteId]);
+  }, [groupId]);
 
-  if (!teacherId) {
-    return (
-      <ScreenShell title="الامتحانات" onBack={onBack}>
-        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
-        <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
-      </ScreenShell>
-    );
+  if (groups === null) {
+    return <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>;
   }
   if (!groupId) {
     return (
-      <ScreenShell title={teacher.name} onBack={() => setTeacherId("")}>
+      <div>
         <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المجموعة</p>
-        <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />
-      </ScreenShell>
+        <GroupPicker groups={groups} value={groupId} onChange={setGroupId} />
+      </div>
     );
   }
   if (creating) {
     return (
       <ExamCreateScreen
-        store={store}
-        teacher={teacher}
+        instituteId={instituteId}
+        teacherId={teacherId}
+        subjectId={subjectId}
         groupId={groupId}
         onBack={() => setCreating(false)}
         onDone={() => {
@@ -598,15 +595,16 @@ function ExamsAdminScreen({ store, onBack }) {
   }
   if (openExam) {
     return openExam.type === "mcq" ? (
-      <McqExamResultsScreen store={store} examId={openExam.id} onBack={() => setOpenExam(null)} />
+      <McqExamResultsScreen examId={openExam.id} onBack={() => setOpenExam(null)} />
     ) : (
-      <PhotoExamSubmissionsScreen store={store} examId={openExam.id} onBack={() => setOpenExam(null)} />
+      <PhotoExamSubmissionsScreen instituteId={instituteId} examId={openExam.id} onBack={() => setOpenExam(null)} />
     );
   }
 
-  const groupName = teacher.groups.find((g) => g.id === groupId)?.name || "";
+  const groupName = groups.find((g) => g.id === groupId)?.name || "";
   return (
-    <ScreenShell title={`${teacher.name} · ${groupName}`} onBack={() => setGroupId("")}>
+    <div>
+      <button onClick={() => setGroupId("")} className="text-sm mb-4" style={{ color: ACCENT }}>→ {groupName}</button>
       <button onClick={() => setCreating(true)} className="w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-6 text-sm font-semibold text-white" style={{ background: ACCENT }}>
         <Plus size={16} /> امتحان جديد
       </button>
@@ -633,11 +631,11 @@ function ExamsAdminScreen({ store, onBack }) {
           </button>
         ))}
       </div>
-    </ScreenShell>
+    </div>
   );
 }
 
-function ExamCreateScreen({ store, teacher, groupId, onBack, onDone }) {
+function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, onDone }) {
   const [type, setType] = useState("mcq"); // "mcq" | "photo"
   const [title, setTitle] = useState("");
   const [timeLimit, setTimeLimit] = useState("20");
@@ -680,18 +678,18 @@ function ExamCreateScreen({ store, teacher, groupId, onBack, onDone }) {
     setSubmitting(true);
     try {
       if (type === "mcq") {
-        await dbAddMcqExam(store.instituteId, {
-          subjectId: teacher.subjectId,
-          teacherId: teacher.id,
+        await dbAddMcqExam(instituteId, {
+          subjectId,
+          teacherId,
           groupId,
           title: title.trim(),
           timeLimitMinutes: Number(timeLimit) || 20,
           questions,
         });
       } else {
-        await dbAddPhotoExam(store.instituteId, {
-          subjectId: teacher.subjectId,
-          teacherId: teacher.id,
+        await dbAddPhotoExam(instituteId, {
+          subjectId,
+          teacherId,
           groupId,
           title: title.trim(),
           timeLimitMinutes: timeLimit ? Number(timeLimit) : null,
@@ -707,7 +705,8 @@ function ExamCreateScreen({ store, teacher, groupId, onBack, onDone }) {
   };
 
   return (
-    <ScreenShell title="امتحان جديد" onBack={onBack}>
+    <div>
+      <button onClick={onBack} className="text-sm mb-4" style={{ color: ACCENT }}>→ رجوع</button>
       <form onSubmit={submit}>
         <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>نوع الامتحان</p>
         <div className="flex gap-2 mb-5">
@@ -789,11 +788,11 @@ function ExamCreateScreen({ store, teacher, groupId, onBack, onDone }) {
           <PrimaryButton type="submit" disabled={submitting}>{submitting ? "جارِ الحفظ…" : "إرسال"}</PrimaryButton>
         </div>
       </form>
-    </ScreenShell>
+    </div>
   );
 }
 
-function McqExamResultsScreen({ store, examId, onBack }) {
+function McqExamResultsScreen({ examId, onBack }) {
   const [submissions, setSubmissions] = useState(null);
 
   useEffect(() => {
@@ -801,25 +800,24 @@ function McqExamResultsScreen({ store, examId, onBack }) {
   }, [examId]);
 
   return (
-    <ScreenShell title="نتائج الامتحان" onBack={onBack}>
+    <div>
+      <button onClick={onBack} className="text-sm mb-4" style={{ color: ACCENT }}>→ رجوع</button>
+      <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>نتائج الامتحان</p>
       {submissions === null && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
       {submissions && submissions.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه طلاب حلّوا الامتحان بعد.</p>}
       <div className="flex flex-col gap-2.5">
-        {submissions && submissions.map((s) => {
-          const student = store.students.find((st) => st.id === s.studentId);
-          return (
-            <div key={s.id} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
-              <p className="text-sm" style={{ color: INK }}>{student?.name || "طالب"}</p>
-              <p className="text-sm" style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT }}>{s.score}/{s.total}</p>
-            </div>
-          );
-        })}
+        {submissions && submissions.map((s) => (
+          <div key={s.id} className="flex items-center justify-between p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <p className="text-sm" style={{ color: INK }}>{s.studentName}</p>
+            <p className="text-sm" style={{ fontFamily: DISPLAY, fontWeight: 700, color: ACCENT }}>{s.score}/{s.total}</p>
+          </div>
+        ))}
       </div>
-    </ScreenShell>
+    </div>
   );
 }
 
-function PhotoExamSubmissionsScreen({ store, examId, onBack }) {
+function PhotoExamSubmissionsScreen({ instituteId, examId, onBack }) {
   const [submissions, setSubmissions] = useState(null);
   const [uploadingFor, setUploadingFor] = useState(null);
 
@@ -829,120 +827,44 @@ function PhotoExamSubmissionsScreen({ store, examId, onBack }) {
   const handleCorrectedUpload = (submissionId, studentId, file) => {
     setUploadingFor(submissionId);
     compressImageFile(file, 1000, 0.8)
-      .then((blob) => dbUploadCorrectedPhoto(store.instituteId, submissionId, studentId, blob))
+      .then((blob) => dbUploadCorrectedPhoto(instituteId, submissionId, studentId, blob))
       .then(reload)
       .finally(() => setUploadingFor(null));
   };
 
   return (
-    <ScreenShell title="أوراق الطلاب" onBack={onBack}>
+    <div>
+      <button onClick={onBack} className="text-sm mb-4" style={{ color: ACCENT }}>→ رجوع</button>
+      <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>أوراق الطلاب</p>
       {submissions === null && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
       {submissions && submissions.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه طلاب رفعوا أوراقهم بعد.</p>}
       <div className="flex flex-col gap-3">
-        {submissions && submissions.map((s) => {
-          const student = store.students.find((st) => st.id === s.studentId);
-          return (
-            <div key={s.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
-              <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{student?.name || "طالب"}</p>
-              <a href={s.answerImageUrl} target="_blank" rel="noreferrer" className="text-xs mb-3 inline-block" style={{ color: ACCENT }}>
-                عرض ورقة الطالب
-              </a>
-              {s.correctedImageUrl ? (
-                <p className="text-xs flex items-center gap-1.5" style={{ color: ACCENT }}><CheckCircle2 size={13} /> تم رفع التصحيح</p>
-              ) : (
-                <label className="block cursor-pointer">
-                  <div className="flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold border" style={{ borderColor: ACCENT, color: ACCENT }}>
-                    {uploadingFor === s.id ? "جارِ الرفع…" : "رفع صورة مصححة"}
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    disabled={uploadingFor === s.id}
-                    onChange={(e) => e.target.files?.[0] && handleCorrectedUpload(s.id, s.studentId, e.target.files[0])}
-                  />
-                </label>
-              )}
-            </div>
-          );
-        })}
+        {submissions && submissions.map((s) => (
+          <div key={s.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER }}>
+            <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{s.studentName}</p>
+            <a href={s.answerImageUrl} target="_blank" rel="noreferrer" className="text-xs mb-3 inline-block" style={{ color: ACCENT }}>
+              عرض ورقة الطالب
+            </a>
+            {s.correctedImageUrl ? (
+              <p className="text-xs flex items-center gap-1.5" style={{ color: ACCENT }}><CheckCircle2 size={13} /> تم رفع التصحيح</p>
+            ) : (
+              <label className="block cursor-pointer">
+                <div className="flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold border" style={{ borderColor: ACCENT, color: ACCENT }}>
+                  {uploadingFor === s.id ? "جارِ الرفع…" : "رفع صورة مصححة"}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploadingFor === s.id}
+                  onChange={(e) => e.target.files?.[0] && handleCorrectedUpload(s.id, s.studentId, e.target.files[0])}
+                />
+              </label>
+            )}
+          </div>
+        ))}
       </div>
-    </ScreenShell>
-  );
-}
-
-/* ============================== أسئلة الطلاب (إدارة) ============================== */
-function TeacherMessagesAdminScreen({ store, onBack }) {
-  const [teacherId, setTeacherId] = useState("");
-  const [conversations, setConversations] = useState(null);
-  const [openStudentId, setOpenStudentId] = useState(null);
-  const [copied, setCopied] = useState(false);
-
-  const teacher = store.teachers.find((t) => t.id === teacherId);
-
-  useEffect(() => {
-    if (!teacherId) return;
-    setConversations(null);
-    dbFetchTeacherConversations(store.instituteId, teacherId).then(setConversations);
-  }, [teacherId, store.instituteId]);
-
-  const copyLink = () => {
-    const link = `${window.location.origin}${window.location.pathname}?tcode=${teacher.accessCode}`;
-    navigator.clipboard?.writeText(link).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  if (!teacherId) {
-    return (
-      <ScreenShell title="أسئلة الطلاب" onBack={onBack}>
-        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
-        <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
-      </ScreenShell>
-    );
-  }
-
-  if (openStudentId) {
-    const student = store.students.find((s) => s.id === openStudentId);
-    return (
-      <ConversationThreadScreen
-        title={student?.name || "طالب"}
-        onBack={() => setOpenStudentId(null)}
-        fetchMessages={() => dbFetchConversation(teacherId, openStudentId)}
-        onSend={(text) => dbSendMessageAsTeacher(store.instituteId, teacherId, openStudentId, text)}
-        selfSender="teacher"
-      />
-    );
-  }
-
-  return (
-    <ScreenShell title={teacher.name} onBack={() => setTeacherId("")}>
-      <div className="p-3.5 rounded-2xl mb-6" style={{ background: ACCENT_SOFT }}>
-        <p className="text-xs mb-2" style={{ color: ACCENT }}>رابط دخول خاص بهذا المدرس — يدخله مرة وحدة ويضل مسجل بجهازه</p>
-        <button onClick={copyLink} className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold text-white" style={{ background: ACCENT }}>
-          {copied ? "تم النسخ ✓" : "نسخ رابط الدخول"}
-        </button>
-      </div>
-
-      <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>المحادثات</p>
-      {conversations === null && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
-      {conversations && conversations.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه أسئلة من الطلاب بعد.</p>}
-      <div className="flex flex-col gap-2.5">
-        {conversations && conversations.map((c) => {
-          const student = store.students.find((s) => s.id === c.studentId);
-          return (
-            <button key={c.studentId} onClick={() => setOpenStudentId(c.studentId)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color: INK }}>{student?.name || "طالب"}</p>
-                <p className="text-xs mt-0.5 truncate" style={{ color: INK_MUTED }}>{c.lastSender === "teacher" ? "أنت: " : ""}{c.lastMessage}</p>
-              </div>
-              <ChevronLeft size={16} style={{ color: INK_MUTED, flexShrink: 0 }} />
-            </button>
-          );
-        })}
-      </div>
-    </ScreenShell>
+    </div>
   );
 }
 
@@ -1012,6 +934,7 @@ function ConversationThreadScreen({ title, onBack, fetchMessages, onSend, selfSe
 }
 
 function TeacherInboxScreen({ teacherSession, onLogout }) {
+  const [mainTab, setMainTab] = useState("messages"); // "messages" | "exams"
   const [conversations, setConversations] = useState(null);
   const [openStudentId, setOpenStudentId] = useState(null);
   const [pushStatus, setPushStatus] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
@@ -1090,20 +1013,35 @@ function TeacherInboxScreen({ teacherSession, onLogout }) {
           </button>
         )}
 
-        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الأسئلة</p>
-        {conversations === null && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
-        {conversations && conversations.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه أسئلة من الطلاب بعد.</p>}
-        <div className="flex flex-col gap-2.5">
-          {conversations && conversations.map((c) => (
-            <button key={c.studentId} onClick={() => setOpenStudentId(c.studentId)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color: INK }}>{c.studentName}</p>
-                <p className="text-xs mt-0.5 truncate" style={{ color: INK_MUTED }}>{c.lastSender === "teacher" ? "أنت: " : ""}{c.lastMessage}</p>
-              </div>
-              <ChevronLeft size={16} style={{ color: INK_MUTED, flexShrink: 0 }} />
+        <div className="flex p-1 rounded-xl mb-6" style={{ background: SURFACE }}>
+          {[{ id: "messages", label: "أسئلة الطلاب" }, { id: "exams", label: "الامتحانات" }].map((t) => (
+            <button key={t.id} onClick={() => setMainTab(t.id)} className="flex-1 text-xs py-2.5 rounded-lg font-medium transition-colors"
+              style={{ background: mainTab === t.id ? "#fff" : "transparent", color: mainTab === t.id ? INK : INK_MUTED, boxShadow: mainTab === t.id ? "0 1px 2px rgba(22,33,29,0.08)" : "none" }}>
+              {t.label}
             </button>
           ))}
         </div>
+
+        {mainTab === "exams" ? (
+          <TeacherExamsScreen instituteId={teacherSession.instituteId} teacherId={teacherSession.id} subjectId={teacherSession.subjectId} />
+        ) : (
+          <>
+            <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>الأسئلة</p>
+            {conversations === null && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
+            {conversations && conversations.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه أسئلة من الطلاب بعد.</p>}
+            <div className="flex flex-col gap-2.5">
+              {conversations && conversations.map((c) => (
+                <button key={c.studentId} onClick={() => setOpenStudentId(c.studentId)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium" style={{ color: INK }}>{c.studentName}</p>
+                    <p className="text-xs mt-0.5 truncate" style={{ color: INK_MUTED }}>{c.lastSender === "teacher" ? "أنت: " : ""}{c.lastMessage}</p>
+                  </div>
+                  <ChevronLeft size={16} style={{ color: INK_MUTED, flexShrink: 0 }} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
@@ -2551,13 +2489,41 @@ function McqTakeScreen({ store, studentId, examId, onBack }) {
 
   if (result) {
     return (
-      <div dir="rtl" className="min-h-screen px-5 py-10 flex flex-col items-center justify-center text-center" style={{ background: "#FFFFFF", fontFamily: SANS }}>
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background: ACCENT_SOFT }}>
-          <CheckCircle2 size={30} style={{ color: ACCENT }} />
+      <div dir="rtl" className="min-h-screen px-5 py-10" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+        <div className="flex flex-col items-center text-center mb-8">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background: ACCENT_SOFT }}>
+            <CheckCircle2 size={30} style={{ color: ACCENT }} />
+          </div>
+          <p className="text-sm mb-1" style={{ color: INK_MUTED }}>{exam.title}</p>
+          <p className="text-2xl" style={{ fontFamily: DISPLAY, fontWeight: 800, color: INK }}>{result.score}/{result.total}</p>
         </div>
-        <p className="text-sm mb-1" style={{ color: INK_MUTED }}>{exam.title}</p>
-        <p className="text-2xl mb-6" style={{ fontFamily: DISPLAY, fontWeight: 800, color: INK }}>{result.score}/{result.total}</p>
-        <button onClick={onBack} className="rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: ACCENT }}>رجوع</button>
+
+        {result.breakdown && (
+          <div className="flex flex-col gap-2.5 mb-8">
+            {result.breakdown.map((q, qi) => (
+              <div key={q.questionId} className="p-3.5 rounded-2xl border" style={{ borderColor: q.isCorrect ? ACCENT : DANGER }}>
+                <div className="flex items-start gap-2.5">
+                  {q.isCorrect ? (
+                    <CheckCircle2 size={17} style={{ color: ACCENT, flexShrink: 0, marginTop: 2 }} />
+                  ) : (
+                    <XCircle size={17} style={{ color: DANGER, flexShrink: 0, marginTop: 2 }} />
+                  )}
+                  <div className="flex-1">
+                    <p className="text-sm" style={{ color: INK }}>{qi + 1}. {q.text}</p>
+                    <p className="text-xs mt-1.5" style={{ color: q.isCorrect ? ACCENT : DANGER }}>
+                      إجابتك: {q.selectedIndex !== null ? q.options[q.selectedIndex] : "بدون إجابة"}
+                    </p>
+                    {!q.isCorrect && (
+                      <p className="text-xs mt-0.5" style={{ color: ACCENT }}>الصحيحة: {q.options[q.correctIndex]}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={onBack} className="w-full rounded-xl py-3 text-sm font-semibold text-white" style={{ background: ACCENT }}>رجوع</button>
       </div>
     );
   }
@@ -3491,8 +3457,6 @@ function AdminDashboard({ store, onLogout }) {
     attendance: <AttendanceScreen store={store} onBack={back} />,
     grades: <GradesScreen store={store} onBack={back} />,
     installments: <InstallmentsScreen store={store} onBack={back} />,
-    exams: <ExamsAdminScreen store={store} onBack={back} />,
-    "teacher-messages": <TeacherMessagesAdminScreen store={store} onBack={back} />,
     archive: <ArchiveScreen store={store} onBack={back} />,
     notifications: <NotificationsScreen store={store} onBack={back} />,
     "notify-parent": <NotifyParentScreen store={store} onBack={back} />,

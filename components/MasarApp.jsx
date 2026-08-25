@@ -3487,7 +3487,7 @@ function AdminDashboard({ store, onLogout }) {
     grades: <GradesScreen store={store} onBack={back} />,
     installments: <InstallmentsScreen store={store} onBack={back} />,
     exams: <ExamsAdminScreen store={store} onBack={back} />,
-    "teacher-messages": <TeacherMessagesAdminScreen store={store} onBack={back} />
+    "teacher-messages": <TeacherMessagesAdminScreen store={store} onBack={back} />,
     archive: <ArchiveScreen store={store} onBack={back} />,
     notifications: <NotificationsScreen store={store} onBack={back} />,
     "notify-parent": <NotifyParentScreen store={store} onBack={back} />,

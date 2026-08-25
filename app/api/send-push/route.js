@@ -9,9 +9,12 @@ function ensureVapid() {
   webpush.setVapidDetails("mailto:no-reply@masar.app", pub, priv);
 }
 
-async function resolveStudentIds(supabaseAdmin, target) {
+async function resolveRecipients(supabaseAdmin, target) {
+  if (target.type === "teacher" && target.teacherId) {
+    return { column: "teacher_id", ids: [target.teacherId] };
+  }
   if (target.type === "student" && target.studentId) {
-    return [target.studentId];
+    return { column: "student_id", ids: [target.studentId] };
   }
   if (target.type === "group" && target.subjectId && target.teacherId && target.groupId) {
     const { data, error } = await supabaseAdmin
@@ -20,13 +23,13 @@ async function resolveStudentIds(supabaseAdmin, target) {
       .eq("subject_id", target.subjectId)
       .eq("teacher_id", target.teacherId)
       .eq("group_id", target.groupId);
-    if (error) return [];
-    return data.map((r) => r.student_id);
+    if (error) return { column: "student_id", ids: [] };
+    return { column: "student_id", ids: data.map((r) => r.student_id) };
   }
   // "all"
   const { data, error } = await supabaseAdmin.from("students").select("id");
-  if (error) return [];
-  return data.map((r) => r.id);
+  if (error) return { column: "student_id", ids: [] };
+  return { column: "student_id", ids: data.map((r) => r.id) };
 }
 
 export async function POST(request) {
@@ -39,15 +42,15 @@ export async function POST(request) {
       return Response.json({ error: "missing fields" }, { status: 400 });
     }
 
-    const studentIds = await resolveStudentIds(supabaseAdmin, target);
-    if (studentIds.length === 0) {
+    const { column, ids } = await resolveRecipients(supabaseAdmin, target);
+    if (ids.length === 0) {
       return Response.json({ sent: 0 });
     }
 
     const { data: subs, error: subsErr } = await supabaseAdmin
       .from("push_subscriptions")
-      .select("id, student_id, endpoint, p256dh, auth")
-      .in("student_id", studentIds);
+      .select("id, endpoint, p256dh, auth")
+      .in(column, ids);
     if (subsErr) throw subsErr;
 
     const payload = JSON.stringify({ title: title || "مسار", body });

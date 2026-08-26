@@ -1,5 +1,16 @@
 import { getSupabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { verifyPassword } from "../../../../lib/passwordHash";
+import { createSessionToken } from "../../../../lib/session";
+
+function withSessionCookie(json, sessionPayload) {
+  const token = createSessionToken(sessionPayload);
+  const res = Response.json(json);
+  res.headers.append(
+    "Set-Cookie",
+    `masar_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`
+  );
+  return res;
+}
 
 export async function POST(request) {
   try {
@@ -14,7 +25,7 @@ export async function POST(request) {
       const ownerUsername = process.env.OWNER_USERNAME;
       const ownerPasswordHash = process.env.OWNER_PASSWORD_HASH;
       if (ownerUsername && ownerPasswordHash && username === ownerUsername && verifyPassword(password, ownerPasswordHash)) {
-        return Response.json({ role: "owner" });
+        return withSessionCookie({ role: "owner" }, { role: "owner" });
       }
 
       // إدارة معهد
@@ -28,12 +39,10 @@ export async function POST(request) {
         if (institute.status === "suspended") {
           return Response.json({ error: "suspended" }, { status: 403 });
         }
-        return Response.json({
-          role: "institute-admin",
-          instituteId: institute.id,
-          instituteName: institute.name,
-          logoUrl: institute.logo_url,
-        });
+        return withSessionCookie(
+          { role: "institute-admin", instituteId: institute.id, instituteName: institute.name, logoUrl: institute.logo_url },
+          { role: "institute-admin", instituteId: institute.id }
+        );
       }
 
       return Response.json({ error: "invalid" }, { status: 401 });
@@ -47,7 +56,10 @@ export async function POST(request) {
         .maybeSingle();
       if (error) throw error;
       if (student && verifyPassword(password, student.password)) {
-        return Response.json({ role: "student", studentId: student.id, instituteId: student.institute_id });
+        return withSessionCookie(
+          { role: "student", studentId: student.id, instituteId: student.institute_id },
+          { role: "student", studentId: student.id, instituteId: student.institute_id }
+        );
       }
       return Response.json({ error: "invalid" }, { status: 401 });
     }

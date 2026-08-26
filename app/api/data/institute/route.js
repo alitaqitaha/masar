@@ -2,6 +2,9 @@ import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { verifySessionToken } from "../../../../lib/session";
 
+// المسار يعتمد على الكوكيز (الجلسة) لكل طلب، فلازم يبقى ديناميكي دايماً
+export const dynamic = "force-dynamic";
+
 const TEACHERS_COLS = "id, name, subject_id, access_code, created_at, groups(id, name)";
 const STUDENTS_COLS = "id, serial, name, photo_url, phone, parent_phone, username, created_at, enrollments(subject_id, teacher_id, group_id)";
 const GRADES_COLS = "id, subject_id, teacher_id, group_id, exam_name, exam_type, exam_date, pass_score, full_score, created_at, grade_results(student_id, status, score)";

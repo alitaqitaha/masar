@@ -1577,8 +1577,12 @@ function AddStudentScreen({ store, onBack }) {
       setName(""); setPhone(""); setParentPhone(""); setPhoto(null); setUsername(""); setPassword(""); setEnroll({});
     } catch (err) {
       const msg = (err && err.message) || "";
-      if (msg.includes("duplicate") || msg.includes("unique")) {
+      if (msg === "duplicate_username") {
         setSubmitError("اسم المستخدم هذا مستخدم أصلاً — جرب اسم مستخدم ثاني");
+      } else if (msg === "duplicate_serial") {
+        setSubmitError("تعارض بالرقم التسلسلي — جرب تحفظ الطالب مرة ثانية");
+      } else if (msg.includes("duplicate") || msg.includes("unique")) {
+        setSubmitError("بيانات هذا الطالب مستخدمة أصلاً — تأكد من اسم المستخدم وحاول مرة ثانية");
       } else {
         setSubmitError("تعذر حفظ الطالب — حاول مرة ثانية");
       }
@@ -4032,8 +4036,8 @@ export default function MasarApp() {
           return dbAddGroup(instituteId, teacherId, nextName);
         }, ["teachers"]),
         addStudent: async (studentData) => {
-          const nextNumber = data.students.length + 1;
-          const serial = String(nextNumber).padStart(4, "0");
+          const maxSerial = data.students.reduce((max, s) => Math.max(max, parseInt(s.serial, 10) || 0), 0);
+          const serial = String(maxSerial + 1).padStart(4, "0");
           await withReload(() => dbAddStudent(instituteId, studentData, serial), ["students"])();
           return serial;
         },

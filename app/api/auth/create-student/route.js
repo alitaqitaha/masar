@@ -40,10 +40,12 @@ export async function POST(request) {
     return Response.json({ ok: true, serial });
   } catch (e) {
     console.error("create-student error:", e);
-    const msg = (e && e.message) || "";
+    const msg = ((e && e.message) || "").toLowerCase();
     if (msg.includes("duplicate") || msg.includes("unique")) {
+      if (msg.includes("username")) return Response.json({ error: "duplicate_username" }, { status: 409 });
+      if (msg.includes("serial")) return Response.json({ error: "duplicate_serial" }, { status: 409 });
       return Response.json({ error: "duplicate" }, { status: 409 });
     }
-    return Response.json({ error: msg || "create-student failed" }, { status: 500 });
+    return Response.json({ error: (e && e.message) || "create-student failed" }, { status: 500 });
   }
 }

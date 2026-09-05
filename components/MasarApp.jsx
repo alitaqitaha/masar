@@ -2039,16 +2039,20 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
     <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
+          @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #exam-report-print, #exam-report-print * { visibility: visible; }
           #exam-report-print {
-            position: fixed;
-            inset: 0;
+            position: absolute;
+            left: 0;
+            top: 0;
             margin: 0;
             max-width: 100% !important;
             width: 100% !important;
             border: none !important;
+            overflow: visible !important;
           }
+          #exam-report-print .report-row { break-inside: avoid; page-break-inside: avoid; }
           #exam-report-print .report-row p:first-child { font-size: 18px !important; }
           #exam-report-print .report-row p:last-child { font-size: 20px !important; }
           #exam-report-print .report-title { font-size: 24px !important; }
@@ -2121,16 +2125,20 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
     <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
+          @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #attendance-report-print, #attendance-report-print * { visibility: visible; }
           #attendance-report-print {
-            position: fixed;
-            inset: 0;
+            position: absolute;
+            left: 0;
+            top: 0;
             margin: 0;
             max-width: 100% !important;
             width: 100% !important;
             border: none !important;
+            overflow: visible !important;
           }
+          #attendance-report-print .report-row { break-inside: avoid; page-break-inside: avoid; }
           #attendance-report-print .report-row p:first-child { font-size: 18px !important; }
           #attendance-report-print .report-row p:last-child { font-size: 18px !important; }
           #attendance-report-print .report-title { font-size: 22px !important; }
@@ -2935,9 +2943,19 @@ function ReportScreen({ store, student, onBack }) {
     <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
+          @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #report-print, #report-print * { visibility: visible; }
-          #report-print { position: fixed; inset: 0; margin: auto; }
+          #report-print {
+            position: absolute;
+            left: 0;
+            top: 0;
+            margin: 0;
+            max-width: 100% !important;
+            width: 100% !important;
+            border: none !important;
+            overflow: visible !important;
+          }
         }
       `}</style>
       <button onClick={() => setGenerated(false)} className="text-sm mb-6" style={{ color: ACCENT }}>→ رجوع</button>

@@ -23,6 +23,7 @@ export async function POST(request) {
     );
     return res;
   } catch (e) {
+    
     console.error("teacher-login error:", e);
     return Response.json({ error: (e && e.message) || "login failed" }, { status: 500 });
   }

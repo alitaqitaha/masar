@@ -584,7 +584,8 @@ function TeacherExamsScreen({ instituteId, teacherId, subjectId }) {
         instituteId={instituteId}
         teacherId={teacherId}
         subjectId={subjectId}
-        groupId={groupId}
+        groups={groups}
+        initialGroupId={groupId}
         onBack={() => setCreating(false)}
         onDone={() => {
           setCreating(false);
@@ -635,8 +636,9 @@ function TeacherExamsScreen({ instituteId, teacherId, subjectId }) {
   );
 }
 
-function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, onDone }) {
+function ExamCreateScreen({ instituteId, teacherId, subjectId, groups, initialGroupId, onBack, onDone }) {
   const [type, setType] = useState("mcq"); // "mcq" | "photo"
+  const [selectedGroupIds, setSelectedGroupIds] = useState(initialGroupId ? [initialGroupId] : []);
   const [title, setTitle] = useState("");
   const [timeLimit, setTimeLimit] = useState("20");
   const [questions, setQuestions] = useState([{ text: "", options: ["", "", "", ""], correctIndex: 0 }]);
@@ -644,6 +646,9 @@ function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, 
   const [preview, setPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const toggleGroup = (id) =>
+    setSelectedGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
 
   const updateQuestion = (i, patch) => setQuestions((prev) => prev.map((q, idx) => (idx === i ? { ...q, ...patch } : q)));
   const updateOption = (qi, oi, value) =>
@@ -663,6 +668,10 @@ function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, 
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    if (selectedGroupIds.length === 0) {
+      setError("اختر مجموعة وحدة على الأقل");
+      return;
+    }
     if (!title.trim()) {
       setError("أدخل اسم الامتحان");
       return;
@@ -677,25 +686,28 @@ function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, 
     }
     setSubmitting(true);
     try {
-      if (type === "mcq") {
-        await dbAddMcqExam(instituteId, {
-          subjectId,
-          teacherId,
-          groupId,
-          title: title.trim(),
-          timeLimitMinutes: Number(timeLimit) || 20,
-          questions,
-        });
-      } else {
-        await dbAddPhotoExam(instituteId, {
-          subjectId,
-          teacherId,
-          groupId,
-          title: title.trim(),
-          timeLimitMinutes: timeLimit ? Number(timeLimit) : null,
-          examImageBlob: imageBlob,
-        });
-      }
+      // نسوي نسخة من نفس الامتحان لكل مجموعة مختارة — بدل ما يعيد المدرس العملية يدوياً لكل مجموعة
+      await Promise.all(
+        selectedGroupIds.map((groupId) =>
+          type === "mcq"
+            ? dbAddMcqExam(instituteId, {
+                subjectId,
+                teacherId,
+                groupId,
+                title: title.trim(),
+                timeLimitMinutes: Number(timeLimit) || 20,
+                questions,
+              })
+            : dbAddPhotoExam(instituteId, {
+                subjectId,
+                teacherId,
+                groupId,
+                title: title.trim(),
+                timeLimitMinutes: timeLimit ? Number(timeLimit) : null,
+                examImageBlob: imageBlob,
+              })
+        )
+      );
       onDone();
     } catch (e2) {
       setError("تعذر حفظ الامتحان — حاول مرة ثانية");
@@ -708,6 +720,13 @@ function ExamCreateScreen({ instituteId, teacherId, subjectId, groupId, onBack, 
     <div>
       <button onClick={onBack} className="text-sm mb-4" style={{ color: ACCENT }}>→ رجوع</button>
       <form onSubmit={submit}>
+        <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>المجموعات — تقدر تختار أكثر من وحدة</p>
+        <div className="flex flex-wrap gap-2 mb-5">
+          {groups.map((g) => (
+            <Chip key={g.id} active={selectedGroupIds.includes(g.id)} onClick={() => toggleGroup(g.id)}>{g.name}</Chip>
+          ))}
+        </div>
+
         <p className="text-xs font-semibold mb-2.5" style={{ color: INK_MUTED }}>نوع الامتحان</p>
         <div className="flex gap-2 mb-5">
           <Chip active={type === "mcq"} onClick={() => setType("mcq")}>اختيارات (MCQ)</Chip>
@@ -2022,7 +2041,18 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
         @media print {
           body * { visibility: hidden; }
           #exam-report-print, #exam-report-print * { visibility: visible; }
-          #exam-report-print { position: fixed; inset: 0; margin: auto; }
+          #exam-report-print {
+            position: fixed;
+            inset: 0;
+            margin: 0;
+            max-width: 100% !important;
+            width: 100% !important;
+            border: none !important;
+          }
+          #exam-report-print .report-row p:first-child { font-size: 18px !important; }
+          #exam-report-print .report-row p:last-child { font-size: 20px !important; }
+          #exam-report-print .report-title { font-size: 24px !important; }
+          #exam-report-print .report-sub { font-size: 15px !important; }
         }
       `}</style>
       <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
@@ -2037,13 +2067,13 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
         </div>
         <div className="p-5">
           <div className="mb-5 pb-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{examName}</p>
-            <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{subjectName} · {examType} · {date}{time ? ` · ${time}` : ""}</p>
-            <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
+            <p className="report-title" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 16 }}>{examName}</p>
+            <p className="report-sub" style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{subjectName} · {examType} · {date}{time ? ` · ${time}` : ""}</p>
+            <p className="report-sub" style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
           </div>
           <div className="flex flex-col gap-2">
             {rows.map(({ student, r }, i) => (
-              <div key={i} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
+              <div key={i} className="report-row flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
                 <p style={{ fontSize: 12, color: INK }}>{student.name}</p>
                 <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 13, color: r?.status === "غش" ? DANGER : ACCENT }}>
                   {r?.status === "طبيعي" ? `${r.score || 0}/${fullScore}` : r?.status || "—"}
@@ -2093,7 +2123,18 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
         @media print {
           body * { visibility: hidden; }
           #attendance-report-print, #attendance-report-print * { visibility: visible; }
-          #attendance-report-print { position: fixed; inset: 0; margin: auto; }
+          #attendance-report-print {
+            position: fixed;
+            inset: 0;
+            margin: 0;
+            max-width: 100% !important;
+            width: 100% !important;
+            border: none !important;
+          }
+          #attendance-report-print .report-row p:first-child { font-size: 18px !important; }
+          #attendance-report-print .report-row p:last-child { font-size: 18px !important; }
+          #attendance-report-print .report-title { font-size: 22px !important; }
+          #attendance-report-print .report-sub { font-size: 15px !important; }
         }
       `}</style>
       <button onClick={onBack} className="text-sm mb-6 no-print" style={{ color: ACCENT }}>→ رجوع</button>
@@ -2109,18 +2150,18 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
         <div className="p-5">
           <div className="flex items-center justify-between mb-5 pb-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
             <div>
-              <p style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 15 }}>{subjectName}</p>
-              <p style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
+              <p className="report-title" style={{ fontFamily: DISPLAY, fontWeight: 700, color: INK, fontSize: 15 }}>{subjectName}</p>
+              <p className="report-sub" style={{ fontSize: 11, color: INK_MUTED, marginTop: 2 }}>{teacherName} · {groupName}</p>
             </div>
             <div className="text-left">
-              <p style={{ fontSize: 11, color: INK_MUTED }}>{date}</p>
-              {time && <p style={{ fontSize: 11, color: INK_MUTED }}>{time}</p>}
+              <p className="report-sub" style={{ fontSize: 11, color: INK_MUTED }}>{date}</p>
+              {time && <p className="report-sub" style={{ fontSize: 11, color: INK_MUTED }}>{time}</p>}
             </div>
           </div>
-          <p style={{ fontSize: 11, color: ACCENT, marginBottom: 10 }}>{presentCount} حاضر من أصل {rows.length}</p>
+          <p className="report-sub" style={{ fontSize: 11, color: ACCENT, marginBottom: 10 }}>{presentCount} حاضر من أصل {rows.length}</p>
           <div className="flex flex-col gap-2">
             {rows.map(({ student, present }, i) => (
-              <div key={i} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
+              <div key={i} className="report-row flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
                 <p style={{ fontSize: 12, color: INK }}>{student.name}</p>
                 <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 12, color: present ? ACCENT : DANGER }}>{present ? "حاضر" : "غائب"}</p>
               </div>

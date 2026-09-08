@@ -2036,17 +2036,20 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
   };
 
   return (
-    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+    <div id="exam-print-wrapper" dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
           @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #exam-report-print, #exam-report-print * { visibility: visible; }
+          #exam-print-wrapper {
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
           #exam-report-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            margin: 0;
+            position: static !important;
+            margin: 0 !important;
             max-width: 100% !important;
             width: 100% !important;
             border: none !important;
@@ -2128,17 +2131,20 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
   };
 
   return (
-    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+    <div id="attendance-print-wrapper" dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
           @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #attendance-report-print, #attendance-report-print * { visibility: visible; }
+          #attendance-print-wrapper {
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
           #attendance-report-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            margin: 0;
+            position: static !important;
+            margin: 0 !important;
             max-width: 100% !important;
             width: 100% !important;
             border: none !important;
@@ -2952,17 +2958,20 @@ function ReportScreen({ store, student, onBack }) {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
+    <div id="student-report-print-wrapper" dir="rtl" className="min-h-screen px-5 py-6 pb-12" style={{ background: "#FFFFFF", fontFamily: SANS }}>
       <style>{`
         @media print {
           @page { size: A4; margin: 14mm; }
           body * { visibility: hidden; }
           #report-print, #report-print * { visibility: visible; }
+          #student-report-print-wrapper {
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
           #report-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            margin: 0;
+            position: static !important;
+            margin: 0 !important;
             max-width: 100% !important;
             width: 100% !important;
             border: none !important;

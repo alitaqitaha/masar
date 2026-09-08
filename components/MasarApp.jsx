@@ -2052,9 +2052,15 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
             border: none !important;
             overflow: visible !important;
           }
-          #exam-report-print .report-row { break-inside: avoid; page-break-inside: avoid; }
-          #exam-report-print .report-row p:first-child { font-size: 18px !important; }
-          #exam-report-print .report-row p:last-child { font-size: 20px !important; }
+          #exam-report-print .report-row {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+            display: table;
+            width: 100%;
+          }
+          #exam-report-print .report-row p:first-child { font-size: 18px !important; display: table-cell; text-align: right; }
+          #exam-report-print .report-row p:last-child { font-size: 20px !important; display: table-cell; text-align: left; white-space: nowrap; width: 1%; }
           #exam-report-print .report-title { font-size: 24px !important; }
           #exam-report-print .report-sub { font-size: 15px !important; }
         }
@@ -2138,9 +2144,15 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
             border: none !important;
             overflow: visible !important;
           }
-          #attendance-report-print .report-row { break-inside: avoid; page-break-inside: avoid; }
-          #attendance-report-print .report-row p:first-child { font-size: 18px !important; }
-          #attendance-report-print .report-row p:last-child { font-size: 18px !important; }
+          #attendance-report-print .report-row {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+            display: table;
+            width: 100%;
+          }
+          #attendance-report-print .report-row p:first-child { font-size: 18px !important; display: table-cell; text-align: right; }
+          #attendance-report-print .report-row p:last-child { font-size: 18px !important; display: table-cell; text-align: left; white-space: nowrap; width: 1%; }
           #attendance-report-print .report-title { font-size: 22px !important; }
           #attendance-report-print .report-sub { font-size: 15px !important; }
         }
@@ -3921,6 +3933,17 @@ export default function MasarApp() {
       return null;
     }
   };
+
+  // تحديث دوري تلقائي لحساب الإدارة — يخلي تغييرات جهاز ثاني (زي مساعد يسجل حضور)
+  // توصل بدون ما تحتاج تحدث الصفحة يدوياً
+  useEffect(() => {
+    if (session !== "institute-admin" || !instituteId) return;
+    const interval = setInterval(() => {
+      reloadInstituteData(instituteId);
+    }, 30000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, instituteId]);
 
   // يحدث بس الجداول المتأثرة بعملية معينة، بدل إعادة تحميل بيانات المعهد كاملة
   const reloadParts = async (id, parts) => {

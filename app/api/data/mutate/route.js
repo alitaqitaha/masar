@@ -151,7 +151,7 @@ export async function POST(request) {
         const { attendanceRecordId, studentId, present } = payload;
         const { error } = await db
           .from("attendance_entries")
-          .upsert({ attendance_record_id: attendanceRecordId, student_id: studentId, present, institute_id: instituteId }, { onConflict: "attendance_record_id,student_id" });
+          .upsert({ attendance_record_id: attendanceRecordId, student_id: studentId, present, excused: false, institute_id: instituteId }, { onConflict: "attendance_record_id,student_id" });
         if (error) throw error;
 
         const { data: record } = await db.from("attendance_records").select("subject_id").eq("id", attendanceRecordId).single();
@@ -159,6 +159,16 @@ export async function POST(request) {
         const message = present ? `تم تحديث حالتك إلى حاضر${subjectName ? ` بمادة ${subjectName}` : ""}` : `تم تحديث حالتك إلى غائب${subjectName ? ` بمادة ${subjectName}` : ""}`;
         const { error: nErr } = await db.from("notifications").insert({ message, target_type: "student", student_id: studentId, institute_id: instituteId });
         if (!nErr) await triggerPush(origin, { type: "student", studentId }, message);
+        return Response.json({ ok: true });
+      }
+
+      case "setAttendanceExcused": {
+        // يستخدم بس بشاشة "أرشفة الحضور" — يبدّل غياب مسجّل مسبقاً إلى "مجاز"، بدون ما يمس منطق تسجيل الحضور الأصلي
+        const { attendanceRecordId, studentId, excused } = payload;
+        const { error } = await db
+          .from("attendance_entries")
+          .upsert({ attendance_record_id: attendanceRecordId, student_id: studentId, excused, institute_id: instituteId }, { onConflict: "attendance_record_id,student_id" });
+        if (error) throw error;
         return Response.json({ ok: true });
       }
 

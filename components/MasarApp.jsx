@@ -46,6 +46,7 @@ import {
   updateStudentInfo as dbUpdateStudentInfo,
   updateGradeResult as dbUpdateGradeResult,
   updateAttendanceEntry as dbUpdateAttendanceEntry,
+  setAttendanceExcused as dbSetAttendanceExcused,
   deleteStudent as dbDeleteStudent,
   loginUnified as dbLoginUnified,
   fetchInstitutes as dbFetchInstitutes,
@@ -63,6 +64,7 @@ import {
   UsersRound,
   Wallet,
   Archive,
+  History,
   Bell,
   Lock,
   Eye,
@@ -172,6 +174,7 @@ const MANAGEMENT_ITEMS = [
   { id: "add-teacher", label: "إضافة مدرس", icon: GraduationCap, code: true },
   { id: "add-group", label: "إضافة مجموعة", icon: UsersRound, code: true },
   { id: "installments", label: "الأقساط", icon: Wallet, code: true },
+  { id: "archive-records", label: "أرشفة الحضور والدرجات", icon: History, code: true },
   { id: "archive", label: "أرشيف الطلاب", icon: Archive, code: true },
   { id: "backup", label: "نسخة احتياطية", icon: Download, code: true },
 ];
@@ -2115,15 +2118,19 @@ function ExamResultsShareScreen({ subjectName, teacherName, groupName, examName,
   );
 }
 
-function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, date, time, students, presentIds, instituteName, onBack }) {
-  const rows = students.map((s) => ({ student: s, present: presentIds.includes(s.id) }));
-  const presentCount = rows.filter((r) => r.present).length;
+function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, date, time, students, presentIds, excusedIds, instituteName, onBack }) {
+  const rows = students.map((s) => ({
+    student: s,
+    status: presentIds.includes(s.id) ? "present" : (excusedIds || []).includes(s.id) ? "excused" : "absent",
+  }));
+  const presentCount = rows.filter((r) => r.status === "present").length;
+  const STATUS_LABELS = { present: "حاضر", absent: "غائب", excused: "مجاز" };
 
   const shareText = [
     `تقرير حضور ${subjectName} — ${teacherName} · ${groupName}`,
     `${date}${time ? ` · ${time}` : ""}`,
     "",
-    ...rows.map(({ student, present }) => `${student.name}: ${present ? "حاضر" : "غائب"}`),
+    ...rows.map(({ student, status }) => `${student.name}: ${STATUS_LABELS[status]}`),
   ].join("\n");
 
   const handleShareText = () => {
@@ -2186,10 +2193,12 @@ function AttendanceResultsShareScreen({ subjectName, teacherName, groupName, dat
           </div>
           <p className="report-sub" style={{ fontSize: 11, color: ACCENT, marginBottom: 10 }}>{presentCount} حاضر من أصل {rows.length}</p>
           <div className="flex flex-col gap-2">
-            {rows.map(({ student, present }, i) => (
+            {rows.map(({ student, status }, i) => (
               <div key={i} className="report-row flex items-center justify-between p-2.5 rounded-lg" style={{ background: SURFACE }}>
                 <p style={{ fontSize: 12, color: INK }}>{student.name}</p>
-                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 12, color: present ? ACCENT : DANGER }}>{present ? "حاضر" : "غائب"}</p>
+                <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 12, color: status === "present" ? ACCENT : status === "excused" ? "#B8860B" : DANGER }}>
+                  {status === "present" ? "حاضر" : status === "excused" ? "مجاز" : "غائب"}
+                </p>
               </div>
             ))}
           </div>
@@ -2361,6 +2370,302 @@ function GradesScreen({ store, onBack }) {
 }
 
 /* ============================== installments ============================== */
+/* ============================== أرشفة الحضور والدرجات (إدارة) ============================== */
+function ArchiveRecordsScreen({ store, onBack }) {
+  const [teacherId, setTeacherId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [kind, setKind] = useState(""); // "attendance" | "grades"
+  const [openRecord, setOpenRecord] = useState(null);
+
+  const teacher = store.teachers.find((t) => t.id === teacherId);
+
+  if (!teacherId) {
+    return (
+      <ScreenShell title="أرشفة الحضور والدرجات" onBack={onBack}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المدرس</p>
+        <TeacherPicker teachers={store.teachers} value={teacherId} onChange={setTeacherId} />
+      </ScreenShell>
+    );
+  }
+  if (!groupId) {
+    return (
+      <ScreenShell title={teacher.name} onBack={() => setTeacherId("")}>
+        <p className="text-xs font-semibold mb-3" style={{ color: INK_MUTED }}>اختر المجموعة</p>
+        <GroupPicker groups={teacher.groups} value={groupId} onChange={setGroupId} />
+      </ScreenShell>
+    );
+  }
+  const groupName = teacher.groups.find((g) => g.id === groupId)?.name || "";
+  if (!kind) {
+    return (
+      <ScreenShell title={`${teacher.name} · ${groupName}`} onBack={() => setGroupId("")}>
+        <div className="flex flex-col gap-2.5">
+          <button onClick={() => setKind("attendance")} className="w-full flex items-center gap-3 p-4 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: ACCENT_SOFT }}>
+              <ClipboardCheck size={18} style={{ color: ACCENT }} />
+            </div>
+            <p className="text-sm font-medium" style={{ color: INK }}>سجلات الحضور</p>
+          </button>
+          <button onClick={() => setKind("grades")} className="w-full flex items-center gap-3 p-4 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: ACCENT_SOFT }}>
+              <ListChecks size={18} style={{ color: ACCENT }} />
+            </div>
+            <p className="text-sm font-medium" style={{ color: INK }}>سجلات الدرجات</p>
+          </button>
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  if (openRecord) {
+    return kind === "attendance" ? (
+      <AttendanceRecordEditScreen store={store} teacher={teacher} groupName={groupName} record={openRecord} onBack={() => setOpenRecord(null)} />
+    ) : (
+      <GradeRecordEditScreen store={store} teacher={teacher} groupName={groupName} record={openRecord} onBack={() => setOpenRecord(null)} />
+    );
+  }
+
+  return (
+    <RecordsPickerList
+      store={store}
+      teacher={teacher}
+      groupName={groupName}
+      kind={kind}
+      onBack={() => setKind("")}
+      onOpen={setOpenRecord}
+    />
+  );
+}
+
+function RecordsPickerList({ store, teacher, groupName, kind, onBack, onOpen }) {
+  const PAGE_SIZE = 20;
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  const loadPage = async (offset) => {
+    const page =
+      kind === "attendance"
+        ? await dbFetchAttendanceRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE)
+        : await dbFetchGradeRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE);
+    setHasMore(page.length === PAGE_SIZE);
+    return page;
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    loadPage(0).then(setRecords).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacher.id, kind]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const more = await loadPage(records.length);
+      setRecords((prev) => [...prev, ...more]);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  return (
+    <ScreenShell title={`${teacher.name} · ${groupName}`} onBack={onBack}>
+      {loading && <p className="text-xs" style={{ color: INK_MUTED }}>جارِ التحميل…</p>}
+      {!loading && records.length === 0 && <p className="text-xs" style={{ color: INK_MUTED }}>ما فيه سجلات بعد.</p>}
+      <div className="flex flex-col gap-2.5">
+        {records.map((r) => (
+          <button key={r.id} onClick={() => onOpen(r)} className="w-full flex items-center justify-between p-3.5 rounded-2xl border text-right" style={{ borderColor: BORDER }}>
+            {kind === "attendance" ? (
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{r.date}{r.createdAt ? ` · ${formatTime(r.createdAt)}` : ""}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{r.presentIds.length}/{r.allGroupStudentIds.length} حاضر</p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm font-medium" style={{ color: INK }}>{r.examName}</p>
+                <p className="text-xs mt-0.5" style={{ color: INK_MUTED }}>{r.examType} · {r.date}{r.createdAt ? ` · ${formatTime(r.createdAt)}` : ""}</p>
+              </div>
+            )}
+            <ChevronLeft size={16} style={{ color: INK_MUTED }} />
+          </button>
+        ))}
+      </div>
+      {!loading && hasMore && (
+        <button onClick={loadMore} disabled={loadingMore} className="w-full mt-4 rounded-xl py-2.5 text-xs font-semibold border disabled:opacity-40" style={{ borderColor: BORDER, color: ACCENT }}>
+          {loadingMore ? "جارِ التحميل…" : "تحميل المزيد"}
+        </button>
+      )}
+    </ScreenShell>
+  );
+}
+
+function AttendanceRecordEditScreen({ store, teacher, groupName, record, onBack }) {
+  const [presentIds, setPresentIds] = useState(record.presentIds);
+  const [excusedIds, setExcusedIds] = useState(record.excusedIds || []);
+  const [saving, setSaving] = useState(null); // studentId being saved
+  const [showShare, setShowShare] = useState(false);
+
+  const statusOf = (studentId) => (presentIds.includes(studentId) ? "present" : excusedIds.includes(studentId) ? "excused" : "absent");
+
+  const setStatus = async (studentId, status) => {
+    setSaving(studentId);
+    try {
+      if (status === "excused") {
+        await dbSetAttendanceExcused(record.id, studentId, true);
+        setExcusedIds((prev) => (prev.includes(studentId) ? prev : [...prev, studentId]));
+        setPresentIds((prev) => prev.filter((id) => id !== studentId));
+      } else {
+        await store.updateAttendanceEntry(record.id, studentId, status === "present");
+        setExcusedIds((prev) => prev.filter((id) => id !== studentId));
+        setPresentIds((prev) => (status === "present" ? (prev.includes(studentId) ? prev : [...prev, studentId]) : prev.filter((id) => id !== studentId)));
+      }
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const rosterStudents = record.allGroupStudentIds.map((id) => store.students.find((s) => s.id === id)).filter(Boolean);
+
+  if (showShare) {
+    return (
+      <AttendanceResultsShareScreen
+        subjectName={getSubject(teacher.subjectId).name}
+        teacherName={teacher.name}
+        groupName={groupName}
+        date={record.date}
+        time={formatTime(record.createdAt)}
+        students={rosterStudents}
+        presentIds={presentIds}
+        excusedIds={excusedIds}
+        instituteName={store.instituteName}
+        onBack={() => setShowShare(false)}
+      />
+    );
+  }
+
+  const STATUS_LABELS = { present: "حاضر", absent: "غائب", excused: "مجاز" };
+  const STATUS_COLORS = { present: ACCENT, absent: DANGER, excused: "#B8860B" };
+
+  return (
+    <ScreenShell title={`${record.date} · ${groupName}`} onBack={onBack}>
+      <p className="text-xs mb-4" style={{ color: INK_MUTED }}>اختر حالة كل طالب — "مجاز" للغياب المبرر (جاهز للمشاركة مع ولي الأمر)</p>
+      <div className="flex flex-col gap-2.5 mb-6">
+        {rosterStudents.map((student) => {
+          const status = statusOf(student.id);
+          return (
+            <div key={student.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER, opacity: saving === student.id ? 0.6 : 1 }}>
+              <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{student.name}</p>
+              <div className="flex flex-wrap gap-2">
+                {["present", "absent", "excused"].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatus(student.id, s)}
+                    disabled={saving === student.id}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border disabled:opacity-50"
+                    style={{
+                      borderColor: status === s ? STATUS_COLORS[s] : BORDER,
+                      background: status === s ? STATUS_COLORS[s] : "#fff",
+                      color: status === s ? "#fff" : INK_MUTED,
+                    }}
+                  >
+                    {STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <PrimaryButton onClick={() => setShowShare(true)}>مشاركة PDF</PrimaryButton>
+    </ScreenShell>
+  );
+}
+
+function GradeRecordEditScreen({ store, teacher, groupName, record, onBack }) {
+  const [results, setResults] = useState(record.results);
+  const [saving, setSaving] = useState(null);
+  const [showShare, setShowShare] = useState(false);
+
+  const setStatus = async (studentId, status) => {
+    setSaving(studentId);
+    const score = status === "طبيعي" ? results[studentId]?.score || "" : "";
+    try {
+      await store.updateGradeResult(record.id, studentId, { status, score });
+      setResults((prev) => ({ ...prev, [studentId]: { status, score } }));
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const setScore = async (studentId, score) => {
+    setResults((prev) => ({ ...prev, [studentId]: { ...prev[studentId], score } }));
+  };
+  const commitScore = async (studentId) => {
+    const r = results[studentId];
+    if (!r) return;
+    setSaving(studentId);
+    try {
+      await store.updateGradeResult(record.id, studentId, { status: r.status, score: r.score });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const roster = Object.keys(record.results).map((id) => store.students.find((s) => s.id === id)).filter(Boolean);
+
+  if (showShare) {
+    return (
+      <ExamResultsShareScreen
+        subjectName={getSubject(teacher.subjectId).name}
+        teacherName={teacher.name}
+        groupName={groupName}
+        examName={record.examName}
+        examType={record.examType}
+        date={record.date}
+        time={formatTime(record.createdAt)}
+        fullScore={record.fullScore}
+        roster={roster}
+        results={results}
+        instituteName={store.instituteName}
+        onBack={() => setShowShare(false)}
+      />
+    );
+  }
+
+  return (
+    <ScreenShell title={`${record.examName} · ${groupName}`} onBack={onBack}>
+      <div className="flex flex-col gap-3 mb-6">
+        {roster.map((student) => {
+          const r = results[student.id];
+          return (
+            <div key={student.id} className="p-3.5 rounded-2xl border" style={{ borderColor: BORDER, opacity: saving === student.id ? 0.6 : 1 }}>
+              <p className="text-sm font-medium mb-2.5" style={{ color: INK }}>{student.name}</p>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {["طبيعي", "غش", "مجاز", "غائب"].map((st) => (
+                  <Chip key={st} active={r?.status === st} onClick={() => setStatus(student.id, st)}>{st}</Chip>
+                ))}
+              </div>
+              {r?.status === "طبيعي" && (
+                <input
+                  type="number"
+                  placeholder={`الدرجة من ${record.fullScore || "؟"}`}
+                  value={r.score}
+                  onChange={(e) => setScore(student.id, e.target.value)}
+                  onBlur={() => commitScore(student.id)}
+                  className="w-full mt-1 rounded-xl px-3 py-2.5 text-sm outline-none border"
+                  style={{ borderColor: BORDER, color: INK }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <PrimaryButton onClick={() => setShowShare(true)}>مشاركة PDF</PrimaryButton>
+    </ScreenShell>
+  );
+}
+
 function InstallmentsScreen({ store, onBack }) {
   const [query, setQuery] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -3564,6 +3869,7 @@ function AdminDashboard({ store, onLogout }) {
     attendance: <AttendanceScreen store={store} onBack={back} />,
     grades: <GradesScreen store={store} onBack={back} />,
     installments: <InstallmentsScreen store={store} onBack={back} />,
+    "archive-records": <ArchiveRecordsScreen store={store} onBack={back} />,
     archive: <ArchiveScreen store={store} onBack={back} />,
     notifications: <NotificationsScreen store={store} onBack={back} />,
     "notify-parent": <NotifyParentScreen store={store} onBack={back} />,
@@ -3975,7 +4281,7 @@ export default function MasarApp() {
     }
   };
 
-  // عند فتح التطبيق: تحقق من جلسة طالب محفوظة بس (مو إدارة/مالك، لأسباب أمنية)
+  // عند فتح التطبيق: تحقق من أي جلسة محفوظة (مدرس، طالب، إدارة، أو مالك)
   useEffect(() => {
     (async () => {
       try {
@@ -4007,10 +4313,24 @@ export default function MasarApp() {
             setSession("student");
             setLoggedInStudentId(savedStudentId);
             setInstituteId(savedInstituteId);
+            setLoading(false);
+            return;
           } else {
             window.localStorage.removeItem("masar_student_id");
             window.localStorage.removeItem("masar_student_institute_id");
           }
+        }
+
+        // ماكو جلسة طالب أو مدرس محفوظة — نتحقق هل عندنا تذكرة موقّعة صالحة لإدارة معهد أو مالك
+        const res = await fetch("/api/auth/session", { credentials: "include" });
+        const sessionInfo = await res.json();
+        if (sessionInfo.role === "owner") {
+          setSession("owner");
+        } else if (sessionInfo.role === "institute-admin") {
+          setInstituteId(sessionInfo.instituteId);
+          setInstituteName(sessionInfo.instituteName);
+          await reloadInstituteData(sessionInfo.instituteId);
+          setSession("institute-admin");
         }
       } catch (e) {
         /* تعذر استرجاع الجلسة — يرجع لشاشة الدخول العادية */

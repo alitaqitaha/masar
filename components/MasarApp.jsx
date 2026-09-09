@@ -2429,6 +2429,7 @@ function ArchiveRecordsScreen({ store, onBack }) {
     <RecordsPickerList
       store={store}
       teacher={teacher}
+      groupId={groupId}
       groupName={groupName}
       kind={kind}
       onBack={() => setKind("")}
@@ -2437,7 +2438,7 @@ function ArchiveRecordsScreen({ store, onBack }) {
   );
 }
 
-function RecordsPickerList({ store, teacher, groupName, kind, onBack, onOpen }) {
+function RecordsPickerList({ store, teacher, groupId, groupName, kind, onBack, onOpen }) {
   const PAGE_SIZE = 20;
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2447,8 +2448,8 @@ function RecordsPickerList({ store, teacher, groupName, kind, onBack, onOpen }) 
   const loadPage = async (offset) => {
     const page =
       kind === "attendance"
-        ? await dbFetchAttendanceRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE)
-        : await dbFetchGradeRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE);
+        ? await dbFetchAttendanceRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE, groupId)
+        : await dbFetchGradeRecordsPage(store.instituteId, teacher.id, offset, PAGE_SIZE, groupId);
     setHasMore(page.length === PAGE_SIZE);
     return page;
   };
@@ -2457,7 +2458,7 @@ function RecordsPickerList({ store, teacher, groupName, kind, onBack, onOpen }) 
     setLoading(true);
     loadPage(0).then(setRecords).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teacher.id, kind]);
+  }, [teacher.id, groupId, kind]);
 
   const loadMore = async () => {
     setLoadingMore(true);

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const TEACHERS_COLS = "id, name, subject_id, access_code, created_at, groups(id, name)";
 const STUDENTS_COLS = "id, serial, name, photo_url, phone, parent_phone, username, created_at, enrollments(subject_id, teacher_id, group_id)";
 const GRADES_COLS = "id, subject_id, teacher_id, group_id, exam_name, exam_type, exam_date, pass_score, full_score, created_at, grade_results(student_id, status, score)";
-const ATTENDANCE_COLS = "id, subject_id, teacher_id, group_id, attendance_date, created_at, attendance_entries(student_id, present)";
+const ATTENDANCE_COLS = "id, subject_id, teacher_id, group_id, attendance_date, created_at, attendance_entries(student_id, present, excused)";
 const INSTALLMENTS_COLS = "id, student_id, amount_number, amount_text, remaining, accountant, note, paid_date";
 const NOTIFICATIONS_COLS = "id, message, target_type, student_id, subject_id, teacher_id, group_id, created_at";
 
@@ -51,6 +51,7 @@ function mapAttendanceRecord(r) {
     date: r.attendance_date,
     createdAt: r.created_at,
     presentIds: (r.attendance_entries || []).filter((e) => e.present).map((e) => e.student_id),
+    excusedIds: (r.attendance_entries || []).filter((e) => e.excused).map((e) => e.student_id),
     allGroupStudentIds: (r.attendance_entries || []).map((e) => e.student_id),
   };
 }
